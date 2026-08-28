@@ -1,18 +1,17 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from trolley.application.admins import ensure_admin_users
-from trolley.config import Settings, get_settings
+from trolley.config import Settings, get_settings, validate_runtime_settings
 from trolley.mcp.server import create_mcp_app
 from trolley.persistence.database import tortoise_config
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    app_settings = settings or get_settings()
+    app_settings = validate_runtime_settings(settings or get_settings())
     mcp_app = create_mcp_app(app_settings.public_base_url, app_settings.admin_emails)
 
     @asynccontextmanager
@@ -37,8 +36,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
-
-
-def run() -> None:
-    uvicorn.run("trolley.main:app", host="0.0.0.0", port=8000)
+def app_factory() -> FastAPI:
+    return create_app()

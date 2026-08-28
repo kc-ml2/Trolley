@@ -7,7 +7,11 @@ from trolley.main import create_app
 
 
 def test_dynamic_tool_live_reload(tmp_path) -> None:
-    settings = Settings(_env_file=None, database_url=f"sqlite://{tmp_path}/test.db")
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"root@example.com"}),
+    )
     app = create_app(settings)
     with TestClient(app) as client:
 

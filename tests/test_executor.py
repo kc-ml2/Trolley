@@ -13,7 +13,11 @@ from trolley.persistence.models import Execution, User
 
 
 def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None:
-    settings = Settings(_env_file=None, database_url=f"sqlite://{tmp_path}/test.db")
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"root@example.com"}),
+    )
     connector = AsyncMock(return_value={"rows": [{"id": 42}]})
     monkeypatch.setattr("trolley.application.execution.database.execute", connector)
 

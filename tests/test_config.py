@@ -1,4 +1,6 @@
-from trolley.config import Settings
+import pytest
+
+from trolley.config import ConfigurationError, Settings, validate_runtime_settings
 
 
 def test_admin_emails_parse_from_comma_separated_environment(monkeypatch) -> None:
@@ -8,3 +10,10 @@ def test_admin_emails_parse_from_comma_separated_environment(monkeypatch) -> Non
     )
     settings = Settings(_env_file=None)
     assert settings.admin_emails == frozenset({"admin@example.com", "ops@example.com"})
+
+
+def test_runtime_settings_require_admin_email(monkeypatch) -> None:
+    monkeypatch.delenv("TROLLEY_ADMIN_EMAILS", raising=False)
+    settings = Settings(_env_file=None)
+    with pytest.raises(ConfigurationError, match="TROLLEY_ADMIN_EMAILS"):
+        validate_runtime_settings(settings)

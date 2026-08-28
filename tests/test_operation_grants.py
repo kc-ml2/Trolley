@@ -15,7 +15,11 @@ from trolley.persistence.models import User
 
 
 def test_user_specific_operation_access(tmp_path, monkeypatch) -> None:
-    settings = Settings(_env_file=None, database_url=f"sqlite://{tmp_path}/test.db")
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"root@example.com"}),
+    )
     connector = AsyncMock(return_value={"rows": [{"ok": 1}]})
     monkeypatch.setattr("trolley.application.execution.database.execute", connector)
 

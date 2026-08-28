@@ -7,6 +7,10 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from trolley.auth.roles import normalize_admin_emails
 
 
+class ConfigurationError(RuntimeError):
+    pass
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -26,6 +30,14 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return normalize_admin_emails(value.split(","))
         return normalize_admin_emails(value)
+
+
+def validate_runtime_settings(settings: Settings) -> Settings:
+    if not settings.admin_emails:
+        raise ConfigurationError(
+            "TROLLEY_ADMIN_EMAILS must contain at least one administrator email"
+        )
+    return settings
 
 
 @lru_cache

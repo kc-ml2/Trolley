@@ -8,7 +8,11 @@ from trolley.main import create_app
 
 
 def test_rejects_reserved_names_and_parameter_mismatch(tmp_path) -> None:
-    settings = Settings(_env_file=None, database_url=f"sqlite://{tmp_path}/test.db")
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"root@example.com"}),
+    )
     with TestClient(create_app(settings)) as client:
 
         async def scenario() -> None:

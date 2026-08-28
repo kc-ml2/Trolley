@@ -12,7 +12,11 @@ from trolley.persistence.models import User
 
 
 def test_admin_assignment_and_scope_require_allowlist(tmp_path) -> None:
-    settings = Settings(_env_file=None, database_url=f"sqlite://{tmp_path}/test.db")
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"root@example.com"}),
+    )
     with TestClient(create_app(settings)) as client:
 
         async def scenario() -> None:

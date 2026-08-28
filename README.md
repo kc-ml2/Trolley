@@ -36,6 +36,8 @@ TROLLEY_ADMIN_EMAILS=admin@example.com
 PAYMENTS_DATABASE_URL=postgresql://user:password@localhost:5432/payments
 ```
 
+`TROLLEY_ADMIN_EMAILS` is required. Trolley validates it before opening the database and exits with a configuration error when it is empty. The `.env` file itself is optional: Docker, Kubernetes, and shell environments may inject the same value directly.
+
 Start Trolley once to initialize the database. When no active allowlisted admin exists, Trolley creates admin Users for the configured emails, but it never generates keys automatically.
 
 ```bash
@@ -378,9 +380,11 @@ Target credentials remain in environment variables. Tool responses do not includ
 |---|---|---|
 | `TROLLEY_DATABASE_URL` | `sqlite://./trolley.db` | Trolley's catalog and execution-history database |
 | `TROLLEY_PUBLIC_BASE_URL` | `http://localhost:8000` | Public base URL used by MCP authentication metadata |
-| `TROLLEY_ADMIN_EMAILS` | empty | Comma-separated admin eligibility allowlist; also used to create admin Users when no active allowlisted admin exists |
+| `TROLLEY_ADMIN_EMAILS` | **required** | Comma-separated admin eligibility allowlist; also used to create admin Users when no active allowlisted admin exists |
 
-Target secrets use administrator-selected environment variable names such as `PAYMENTS_DATABASE_URL` and `ORDERS_API_TOKEN`.
+Target secrets use administrator-selected environment variable names such as `PAYMENTS_DATABASE_URL` and `ORDERS_API_TOKEN`. They are not required at server startup and are checked only when testing or executing their Target.
+
+Both `trolley` and `trolley admin issue-key ...` fail before creating or opening the database when `TROLLEY_ADMIN_EMAILS` is missing. The CLI currently listens on `0.0.0.0:8000`; `TROLLEY_PUBLIC_BASE_URL` controls MCP authentication metadata, not the bind port.
 
 ## Development
 
