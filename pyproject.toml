@@ -3,22 +3,23 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pantry"
+name = "trolley"
 version = "0.1.0"
-description = "Minimal control plane for Trolley Agent runtimes"
+description = "A small MCP execution gateway for databases and HTTP APIs"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "asyncpg>=0.30,<1",
   "fastapi>=0.115,<1",
+  "jsonschema>=4.23,<5",
   "mcp>=2.0,<3",
   "pydantic-settings>=2.7,<3",
   "tortoise-orm>=1.1.8,<2",
   "uvicorn>=0.34,<1",
-  "websockets>=15,<18",
 ]
 
 [project.scripts]
-trolley = "trolley.main:main"
+trolley = "trolley.main:run"
 
 [project.optional-dependencies]
 dev = [
@@ -27,7 +28,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pantry", "src/trolley"]
+packages = ["src/trolley"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

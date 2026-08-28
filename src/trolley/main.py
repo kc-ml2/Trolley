@@ -1,24 +1,44 @@
-import argparse
-import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from trolley.client import PantryClient
-from trolley.config import TrolleySettings
+import uvicorn
+from fastapi import FastAPI
+from tortoise.contrib.fastapi import RegisterTortoise
 
-
-async def run(settings: TrolleySettings | None = None) -> None:
-    settings = settings or TrolleySettings()
-    await PantryClient(settings).run()
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the Trolley runtime")
-    parser.add_argument("command", choices=["run"])
-    parser.parse_args()
-    try:
-        asyncio.run(run())
-    except KeyboardInterrupt:
-        pass
+from trolley.application.bootstrap import bootstrap_admin
+from trolley.config import Settings, get_settings
+from trolley.mcp.server import create_mcp_app
+from trolley.persistence.database import tortoise_config
 
 
-if __name__ == "__main__":
-    main()
+def create_app(settings: Settings | None = None) -> FastAPI:
+    app_settings = settings or get_settings()
+    mcp_app = create_mcp_app(app_settings.public_base_url, app_settings.admin_emails)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with RegisterTortoise(
+            app=app,
+            config=tortoise_config(app_settings),
+            generate_schemas=True,
+        ):
+            await bootstrap_admin(app_settings)
+            await mcp_app.state.mcp_server.registry.load()
+            async with mcp_app.router.lifespan_context(mcp_app):
+                yield
+
+    app = FastAPI(title="Trolley", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    app.mount("/mcp", mcp_app)
+    return app
+
+
+app = create_app()
+
+
+def run() -> None:
+    uvicorn.run("trolley.main:app", host="0.0.0.0", port=8000)
