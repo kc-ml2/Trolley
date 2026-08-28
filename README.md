@@ -26,24 +26,29 @@ pip install -e '.[dev]'
 cp .env.example .env
 ```
 
-Configure the first admin and a PostgreSQL Target credential in `.env`:
+Configure administrator emails and a PostgreSQL Target credential in `.env`:
 
 ```dotenv
 TROLLEY_DATABASE_URL=sqlite://./trolley.db
 TROLLEY_PUBLIC_BASE_URL=http://localhost:8000
-
 TROLLEY_ADMIN_EMAILS=admin@example.com
-TROLLEY_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
-TROLLEY_BOOTSTRAP_ADMIN_API_KEY=sk-trolley-change-me
 
 PAYMENTS_DATABASE_URL=postgresql://user:password@localhost:5432/payments
 ```
 
-Start Trolley:
+Start Trolley once to initialize the database. When no active allowlisted admin exists, Trolley creates admin Users for the configured emails, but it never generates keys automatically.
 
 ```bash
 trolley
 ```
+
+In another terminal, issue a key locally for an allowlisted admin:
+
+```bash
+trolley admin issue-key admin@example.com --name local-admin
+```
+
+The command prints the API key once. Restarting Trolley or running the command again creates another key; it does not reveal an existing one.
 
 Endpoints:
 
@@ -52,7 +57,7 @@ MCP:    http://localhost:8000/mcp/
 Health: http://localhost:8000/health
 ```
 
-Connect an MCP client using the bootstrap key as a Bearer token. A typical client configuration looks like:
+Connect an MCP client using the issued key as a Bearer token. A typical client configuration looks like:
 
 ```json
 {
@@ -60,7 +65,7 @@ Connect an MCP client using the bootstrap key as a Bearer token. A typical clien
     "trolley": {
       "url": "http://localhost:8000/mcp/",
       "headers": {
-        "Authorization": "Bearer sk-trolley-change-me"
+        "Authorization": "Bearer sk-trolley-issued-key"
       }
     }
   }
@@ -70,10 +75,8 @@ Connect an MCP client using the bootstrap key as a Bearer token. A typical clien
 The exact configuration format depends on the MCP client. The resulting HTTP header must be:
 
 ```http
-Authorization: Bearer sk-trolley-change-me
+Authorization: Bearer sk-trolley-issued-key
 ```
-
-> The bootstrap credentials are used only when the User table is empty. Changing them later does not rotate an existing key. Replace the example key before use and keep `.env` private.
 
 ## First PostgreSQL Tool
 
@@ -205,7 +208,7 @@ Consequences:
 - An admin cannot assign the admin role to an email outside the allowlist.
 - Adding an email to the allowlist does not automatically promote an existing user.
 - Removing an email from the allowlist removes admin scope from its existing keys after Trolley restarts.
-- Bootstrap admin creation also requires the email to be allowlisted.
+- When no active allowlisted admin exists, startup creates or promotes Users for the configured emails; it does not issue keys.
 
 ### Create a user and issue a key
 
@@ -328,9 +331,7 @@ Target credentials remain in environment variables. Tool responses do not includ
 |---|---|---|
 | `TROLLEY_DATABASE_URL` | `sqlite://./trolley.db` | Trolley's catalog and execution-history database |
 | `TROLLEY_PUBLIC_BASE_URL` | `http://localhost:8000` | Public base URL used by MCP authentication metadata |
-| `TROLLEY_ADMIN_EMAILS` | empty | Comma-separated admin eligibility allowlist |
-| `TROLLEY_BOOTSTRAP_ADMIN_EMAIL` | empty | First admin email, used only on an empty User table |
-| `TROLLEY_BOOTSTRAP_ADMIN_API_KEY` | empty | First admin key, used only on an empty User table |
+| `TROLLEY_ADMIN_EMAILS` | empty | Comma-separated admin eligibility allowlist; also used to create admin Users when no active allowlisted admin exists |
 
 Target secrets use administrator-selected environment variable names such as `PAYMENTS_DATABASE_URL` and `ORDERS_API_TOKEN`.
 

@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
 
+from trolley.auth.api_keys import create_api_key
 from trolley.config import Settings
 from trolley.main import create_app
+from trolley.persistence.models import User
 
 
 def initialize_payload() -> dict:
@@ -23,10 +25,14 @@ def test_mcp_http_requires_valid_bearer_token(tmp_path) -> None:
         _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
-        bootstrap_admin_email="admin@example.com",
-        bootstrap_admin_api_key=secret,
     )
     with TestClient(create_app(settings)) as client:
+
+        async def issue_key() -> None:
+            admin = await User.get(email="admin@example.com")
+            await create_api_key(admin, "test", secret=secret)
+
+        client.portal.call(issue_key)
         headers = {"Accept": "application/json, text/event-stream"}
 
         missing = client.post("/mcp/", headers=headers, json=initialize_payload())

@@ -5,7 +5,7 @@ import uvicorn
 from fastapi import FastAPI
 from tortoise.contrib.fastapi import RegisterTortoise
 
-from trolley.application.bootstrap import bootstrap_admin
+from trolley.application.admins import ensure_admin_users
 from trolley.config import Settings, get_settings
 from trolley.mcp.server import create_mcp_app
 from trolley.persistence.database import tortoise_config
@@ -22,7 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             config=tortoise_config(app_settings),
             generate_schemas=True,
         ):
-            await bootstrap_admin(app_settings)
+            await ensure_admin_users(app_settings.admin_emails)
             await mcp_app.state.mcp_server.registry.load()
             async with mcp_app.router.lifespan_context(mcp_app):
                 yield

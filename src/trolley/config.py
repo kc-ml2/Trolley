@@ -1,7 +1,8 @@
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from trolley.auth.roles import normalize_admin_emails
 
@@ -15,9 +16,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite://./trolley.db"
     public_base_url: str = "http://localhost:8000"
-    admin_emails: frozenset[str] = frozenset()
-    bootstrap_admin_email: str | None = None
-    bootstrap_admin_api_key: str | None = None
+    admin_emails: Annotated[frozenset[str], NoDecode] = frozenset()
 
     @field_validator("admin_emails", mode="before")
     @classmethod
