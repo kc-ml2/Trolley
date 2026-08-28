@@ -1,6 +1,7 @@
 from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from trolley.application.execution import execute_operation
 from trolley.mcp.enums import SystemToolName
@@ -14,7 +15,7 @@ class DynamicToolRegistry:
         self.names: set[str] = set()
 
     async def load(self) -> int:
-        operations = await Operation.filter(is_active=True).order_by("name")
+        operations = await Operation.filter(is_active=True, target__is_active=True).order_by("name")
         conflicts = [operation.name for operation in operations if operation.name in SystemToolName]
         if conflicts:
             raise ValueError(f"Operations conflict with system tools: {', '.join(conflicts)}")
@@ -27,11 +28,11 @@ class DynamicToolRegistry:
         return len(self.names)
 
     async def reload(self, name: str) -> None:
-        operation = await Operation.get(name=name)
+        operation = await Operation.get(name=name).prefetch_related("target")
         if name in self.names:
             self.server.remove_tool(name)
             self.names.remove(name)
-        if operation.is_active:
+        if operation.is_active and operation.target.is_active:
             self.register(operation)
 
     def register(self, operation: Operation) -> None:
@@ -44,11 +45,14 @@ class DynamicToolRegistry:
             from trolley.mcp.pipeline import current_tool_context
 
             context = current_tool_context()
-            return await execute_operation(
-                operation.name,
-                remove_missing_arguments(arguments),
-                context,
-            )
+            try:
+                return await execute_operation(
+                    operation.name,
+                    remove_missing_arguments(arguments),
+                    context,
+                )
+            except (PermissionError, ValueError) as error:
+                raise ToolError(str(error)) from error
 
         invoke.__name__ = operation.name
         invoke.__signature__ = create_tool_signature(operation.input_schema)

@@ -180,12 +180,23 @@ Set `definition.fetch` to `false` for insert, update, and delete statements.
 
 All API key secrets are stored as SHA-256 hashes and returned only once when issued.
 
-### Roles
+### Roles and Operation access
 
-- `admin`: manages Users, API keys, Targets, and Operations, and invokes every Operation.
-- `user`: lists and invokes only Operations with `access: "user"`.
+- `admin`: manages Users, API keys, Targets, Operations, and grants, and invokes every Operation.
+- `user`: accesses Operations according to the Operation visibility, User access mode, and explicit grants.
 
-Users never receive direct Target configuration or SQL definitions. An Operation with `access: "admin"` is hidden from a user's Tool list and checked again immediately before execution.
+An Operation has one access level:
+
+- `user`: available to users in `standard` mode.
+- `restricted`: available only to explicitly granted users.
+- `admin`: available only to admins; a grant cannot override this restriction.
+
+A User has one Operation access mode:
+
+- `standard`: receives `user` Operations plus explicitly granted `restricted` Operations.
+- `assigned_only`: receives only explicitly granted non-admin Operations, including a specifically granted `user` Operation.
+
+Admins always see every active Operation. Other users never receive direct Target configuration or SQL definitions. Tool visibility and execution are both checked against the current database state.
 
 ### Admin lock
 
@@ -233,6 +244,37 @@ Then call `create_api_key`:
 
 The `secret` in the response is shown once. Configure that secret as the user's MCP Bearer token.
 
+### Restrict a user to assigned Operations
+
+Set a User to `assigned_only` with `update_user_access`:
+
+```json
+{
+  "email": "agent@example.com",
+  "operation_access": "assigned_only"
+}
+```
+
+Assign one Operation with `grant_operation`:
+
+```json
+{
+  "email": "agent@example.com",
+  "operation_name": "monthly_revenue"
+}
+```
+
+That user now sees and invokes `monthly_revenue`, but does not receive other public Operations. Use `revoke_operation` to remove access:
+
+```json
+{
+  "email": "agent@example.com",
+  "operation_name": "monthly_revenue"
+}
+```
+
+Use `list_operation_grants` with optional `email` and `operation_name` filters to inspect assignments. Grants to `admin` Operations are rejected.
+
 ## System Tools
 
 System Tools are fixed in code and cannot be used as Operation names.
@@ -241,6 +283,7 @@ System Tools are fixed in code and cannot be used as Operation names.
 
 - `list_users`
 - `create_user`
+- `update_user_access`
 - `list_api_keys`
 - `create_api_key`
 - `list_targets`
@@ -249,6 +292,9 @@ System Tools are fixed in code and cannot be used as Operation names.
 - `create_operation`
 - `update_operation`
 - `disable_operation`
+- `grant_operation`
+- `revoke_operation`
+- `list_operation_grants`
 - `reload_tools`
 
 ### Authenticated users
@@ -316,6 +362,7 @@ Every dynamic Tool is checked again at execution time:
 
 ```text
 authenticated caller
+→ current User access mode and Operation grants
 → current Operation and Target state
 → Operation access level
 → JSON Schema validation
@@ -343,6 +390,6 @@ ruff check .
 ruff format --check .
 ```
 
-Trolley currently uses Tortoise's startup schema generation instead of migrations. During development, remove `trolley.db` after model changes. Migrations should be introduced before production deployment.
+Trolley currently uses Tortoise's startup schema generation instead of migrations. During development, remove `trolley.db` after model changes, including this release's `User.operation_access` and `OperationGrant` additions. Migrations should be introduced before production deployment.
 
 Email OTP, OAuth onboarding, scheduled watches, and multi-process registry synchronization are not implemented yet.

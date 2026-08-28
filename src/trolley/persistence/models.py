@@ -2,7 +2,7 @@ from tortoise import fields, models
 
 from trolley.domain.operations import ExecutionStatus, OperationAccess
 from trolley.domain.targets import TargetKind
-from trolley.domain.users import UserRole
+from trolley.domain.users import UserOperationAccess, UserRole
 
 
 class User(models.Model):
@@ -10,10 +10,14 @@ class User(models.Model):
     email = fields.CharField(max_length=320, unique=True)
     name = fields.CharField(max_length=255)
     role = fields.CharEnumField(UserRole, default=UserRole.USER)
+    operation_access = fields.CharEnumField(
+        UserOperationAccess, default=UserOperationAccess.STANDARD
+    )
     is_active = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     api_keys: fields.ReverseRelation["ApiKey"]
+    operation_grants: fields.ReverseRelation["OperationGrant"]
 
 
 class ApiKey(models.Model):
@@ -54,6 +58,21 @@ class Operation(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True)
 
     executions: fields.ReverseRelation["Execution"]
+    grants: fields.ReverseRelation["OperationGrant"]
+
+
+class OperationGrant(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
+        "models.User", related_name="operation_grants", on_delete=fields.CASCADE
+    )
+    operation: fields.ForeignKeyRelation[Operation] = fields.ForeignKeyField(
+        "models.Operation", related_name="grants", on_delete=fields.CASCADE
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("user", "operation"),)
 
 
 class Execution(models.Model):

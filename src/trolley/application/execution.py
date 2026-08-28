@@ -3,11 +3,11 @@ from typing import Any
 
 from jsonschema import validate
 
+from trolley.application.access import can_access_operation
 from trolley.auth.context import AuthContext
 from trolley.connectors import database, http
-from trolley.domain.operations import ExecutionStatus, OperationAccess
+from trolley.domain.operations import ExecutionStatus
 from trolley.domain.targets import TargetKind
-from trolley.domain.users import UserRole
 from trolley.persistence.models import Execution, Operation
 
 
@@ -20,8 +20,8 @@ async def execute_operation(
     target = operation.target
     if not operation.is_active or not target.is_active:
         raise ValueError("Operation or target is inactive")
-    if operation.access == OperationAccess.ADMIN and context.role != UserRole.ADMIN:
-        raise PermissionError("This operation requires admin access")
+    if not await can_access_operation(context, operation):
+        raise PermissionError("Operation access denied")
 
     arguments = arguments or {}
     validate(instance=arguments, schema=operation.input_schema)

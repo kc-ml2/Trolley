@@ -12,6 +12,7 @@ SYSTEM_TOOL_POLICIES: Final = MappingProxyType(
     {
         SystemToolName.LIST_USERS: ToolPolicy(Scope.ADMIN),
         SystemToolName.CREATE_USER: ToolPolicy(Scope.ADMIN, ("email", "name")),
+        SystemToolName.UPDATE_USER_ACCESS: ToolPolicy(Scope.ADMIN, ("email",)),
         SystemToolName.LIST_API_KEYS: ToolPolicy(Scope.ADMIN, ("email",)),
         SystemToolName.CREATE_API_KEY: ToolPolicy(Scope.ADMIN, ("email", "name")),
         SystemToolName.LIST_TARGETS: ToolPolicy(Scope.ADMIN),
@@ -21,6 +22,9 @@ SYSTEM_TOOL_POLICIES: Final = MappingProxyType(
         SystemToolName.CREATE_OPERATION: ToolPolicy(Scope.ADMIN, ("name", "target_name")),
         SystemToolName.UPDATE_OPERATION: ToolPolicy(Scope.ADMIN, ("name",)),
         SystemToolName.DISABLE_OPERATION: ToolPolicy(Scope.ADMIN, ("name",)),
+        SystemToolName.GRANT_OPERATION: ToolPolicy(Scope.ADMIN, ("email", "operation_name")),
+        SystemToolName.REVOKE_OPERATION: ToolPolicy(Scope.ADMIN, ("email", "operation_name")),
+        SystemToolName.LIST_OPERATION_GRANTS: ToolPolicy(Scope.ADMIN),
         SystemToolName.RELOAD_TOOLS: ToolPolicy(Scope.ADMIN),
         SystemToolName.EXECUTE: ToolPolicy(Scope.USE, ("name",)),
     }

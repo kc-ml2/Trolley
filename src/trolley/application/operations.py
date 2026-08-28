@@ -1,6 +1,8 @@
 from typing import Any
 
+from trolley.application.access import accessible_operation_names
 from trolley.application.presenters import present_operation
+from trolley.auth.context import AuthContext
 from trolley.domain.operations import OperationAccess
 from trolley.domain.users import UserRole
 from trolley.persistence.models import Operation, Target
@@ -12,12 +14,12 @@ from trolley.validation.operations import (
 )
 
 
-async def list_operations(role: UserRole = UserRole.USER) -> list[dict[str, Any]]:
-    query = Operation.filter(is_active=True)
-    if role != UserRole.ADMIN:
-        query = query.filter(access=OperationAccess.USER)
+async def list_operations(context: AuthContext) -> list[dict[str, Any]]:
+    query = Operation.filter(is_active=True, target__is_active=True)
+    accessible_names = await accessible_operation_names(context)
+    query = query.filter(name__in=accessible_names)
     operations = await query.prefetch_related("target").order_by("name")
-    include_definition = role == UserRole.ADMIN
+    include_definition = context.role == UserRole.ADMIN
     return [
         present_operation(operation, include_definition=include_definition)
         for operation in operations

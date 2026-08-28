@@ -9,7 +9,7 @@ from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.users import UserRole
 from trolley.main import create_app
-from trolley.persistence.models import Execution
+from trolley.persistence.models import Execution, User
 
 
 def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None:
@@ -32,8 +32,9 @@ def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None
                     "additionalProperties": False,
                 },
             )
+            user = await User.create(email="user@example.com", name="User")
             context = AuthContext(
-                user_id="00000000-0000-0000-0000-000000000001",
+                user_id=str(user.id),
                 api_key_id="00000000-0000-0000-0000-000000000002",
                 role=UserRole.USER,
             )

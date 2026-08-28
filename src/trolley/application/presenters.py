@@ -10,6 +10,7 @@ def present_user(user: User) -> dict[str, Any]:
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "operation_access": user.operation_access,
         "is_active": user.is_active,
     }
 

@@ -42,22 +42,25 @@ def test_bearer_auth_and_operation_access(tmp_path, monkeypatch) -> None:
             await operations.create_operation(
                 "profit", "payments", {"sql": "select 2"}, access="admin"
             )
-            user_operations = await operations.list_operations("user")
+            user_context = AuthContext(
+                user_id=str(user.id), api_key_id=str(user_key.id), role=UserRole.USER
+            )
+            admin_context = AuthContext(
+                user_id=str(admin.id), api_key_id="admin-key", role=UserRole.ADMIN
+            )
+            user_operations = await operations.list_operations(user_context)
             assert [item["name"] for item in user_operations] == ["revenue"]
             assert "target" not in user_operations[0]
             assert "definition" not in user_operations[0]
-            assert {item["name"] for item in await operations.list_operations("admin")} == {
+            assert {item["name"] for item in await operations.list_operations(admin_context)} == {
                 "profit",
                 "revenue",
             }
 
-            context = AuthContext(
-                user_id=str(user.id), api_key_id=str(user_key.id), role=UserRole.USER
-            )
             try:
-                await execute_operation("profit", {}, context)
+                await execute_operation("profit", {}, user_context)
             except PermissionError as error:
-                assert "admin" in str(error)
+                assert "denied" in str(error)
             else:
                 raise AssertionError("admin operation was not rejected")
 

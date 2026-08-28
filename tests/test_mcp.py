@@ -17,6 +17,7 @@ def test_mcp_has_small_tool_surface() -> None:
     assert asyncio.run(names()) == {
         "list_users",
         "create_user",
+        "update_user_access",
         "list_api_keys",
         "create_api_key",
         "list_targets",
@@ -26,6 +27,9 @@ def test_mcp_has_small_tool_surface() -> None:
         "create_operation",
         "update_operation",
         "disable_operation",
+        "grant_operation",
+        "revoke_operation",
+        "list_operation_grants",
         "reload_tools",
         "execute",
     }

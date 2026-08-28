@@ -3,7 +3,7 @@ from typing import Any
 from trolley.application.presenters import present_api_key, present_user
 from trolley.auth.api_keys import create_api_key
 from trolley.auth.roles import normalize_email, validate_role_assignment
-from trolley.domain.users import UserRole
+from trolley.domain.users import UserOperationAccess, UserRole
 from trolley.persistence.models import ApiKey, User
 
 
@@ -21,6 +21,16 @@ async def create_user(
     email = normalize_email(email)
     validate_role_assignment(email, role, admin_emails)
     user = await User.create(email=email, name=name.strip(), role=role)
+    return present_user(user)
+
+
+async def update_user_access(
+    email: str,
+    operation_access: UserOperationAccess,
+) -> dict[str, Any]:
+    user = await User.get(email=normalize_email(email), is_active=True)
+    user.operation_access = operation_access
+    await user.save()
     return present_user(user)
 
 

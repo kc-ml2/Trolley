@@ -9,15 +9,16 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
-from trolley.application import operations, targets, users
+from trolley.application import grants, operations, targets, users
+from trolley.application.access import accessible_operation_names
 from trolley.application.execution import execute_operation
 from trolley.auth.context import AuthContext
 from trolley.domain.operations import OperationAccess
 from trolley.domain.targets import TargetKind
-from trolley.domain.users import UserRole
+from trolley.domain.users import UserOperationAccess, UserRole
 from trolley.mcp.constants import AUTH_CONTEXT_PARAMETER, SYSTEM_TOOL_POLICIES
 from trolley.mcp.enums import SystemToolName
-from trolley.mcp.pipeline import validate_tool
+from trolley.mcp.pipeline import current_tool_context, validate_tool
 from trolley.mcp.registry import DynamicToolRegistry
 from trolley.mcp.token_verifier import TrolleyTokenVerifier
 
@@ -50,7 +51,10 @@ class TrolleyMCPServer(MCPServer):
                     raise ToolError(str(error)) from error
                 if inject_context:
                     arguments[AUTH_CONTEXT_PARAMETER] = context
-                return await fn(**arguments)
+                try:
+                    return await fn(**arguments)
+                except (PermissionError, ValueError) as error:
+                    raise ToolError(str(error)) from error
 
             guarded.__signature__ = signature.replace(parameters=public_parameters)
             self.add_tool(guarded, name=name, description=description)
@@ -64,15 +68,13 @@ class TrolleyMCPServer(MCPServer):
         if auth is None:
             return tools
 
-        role = UserRole((auth.access_token.claims or {}).get("role", UserRole.USER))
+        accessible_names = await accessible_operation_names(current_tool_context())
         visible = []
         for tool in tools:
             try:
                 policy = SYSTEM_TOOL_POLICIES[SystemToolName(tool.name)]
             except ValueError:
-                registered = self._tool_manager.get_tool(tool.name)
-                access = (registered.meta or {}).get("access") if registered else None
-                if access == OperationAccess.ADMIN and role != UserRole.ADMIN:
+                if tool.name not in accessible_names:
                     continue
             else:
                 if policy.scope not in auth.scopes:
@@ -106,6 +108,16 @@ def create_mcp_server(
     @server.system_tool(SystemToolName.CREATE_USER, description="Create a user (admin)")
     async def create_user(email: str, name: str, role: UserRole = UserRole.USER) -> dict:
         return await users.create_user(email, name, role, admin_emails=admin_emails)
+
+    @server.system_tool(
+        SystemToolName.UPDATE_USER_ACCESS,
+        description="Set whether a user sees public or only assigned operations (admin)",
+    )
+    async def update_user_access(
+        email: str,
+        operation_access: UserOperationAccess,
+    ) -> dict:
+        return await users.update_user_access(email, operation_access)
 
     @server.system_tool(SystemToolName.LIST_API_KEYS, description="List a user's API keys (admin)")
     async def list_api_keys(email: str) -> list[dict]:
@@ -146,7 +158,7 @@ def create_mcp_server(
         description="List operations visible to the current user",
     )
     async def list_operations(*, auth_context: AuthContext) -> list[dict]:
-        return await operations.list_operations(auth_context.role)
+        return await operations.list_operations(auth_context)
 
     @server.system_tool(
         SystemToolName.CREATE_OPERATION,
@@ -195,6 +207,30 @@ def create_mcp_server(
         result = await operations.disable_operation(name)
         await server.registry.reload(name)
         return result
+
+    @server.system_tool(
+        SystemToolName.GRANT_OPERATION,
+        description="Grant a non-admin operation to a user (admin)",
+    )
+    async def grant_operation(email: str, operation_name: str) -> dict:
+        return await grants.grant_operation(email, operation_name)
+
+    @server.system_tool(
+        SystemToolName.REVOKE_OPERATION,
+        description="Revoke an operation from a user (admin)",
+    )
+    async def revoke_operation(email: str, operation_name: str) -> dict:
+        return await grants.revoke_operation(email, operation_name)
+
+    @server.system_tool(
+        SystemToolName.LIST_OPERATION_GRANTS,
+        description="List operation grants, optionally filtered (admin)",
+    )
+    async def list_operation_grants(
+        operation_name: str | None = None,
+        email: str | None = None,
+    ) -> list[dict]:
+        return await grants.list_operation_grants(operation_name, email)
 
     @server.system_tool(
         SystemToolName.RELOAD_TOOLS,
