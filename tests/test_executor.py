@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from trolley.application.execution import execute_operation
 from trolley.application.operations import create_operation
-from trolley.application.targets import create_target
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.users import UserRole
@@ -13,9 +12,15 @@ from trolley.persistence.models import Execution, User
 
 
 def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None:
+    targets_file = tmp_path / "targets.yaml"
+    targets_file.write_text(
+        "targets:\n  customers:\n    kind: postgresql\n    url: postgresql://example/test\n"
+    )
+    targets_file.chmod(0o600)
     settings = Settings(
         _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
+        targets_file=str(targets_file),
         admin_emails=frozenset({"root@example.com"}),
     )
     connector = AsyncMock(return_value={"rows": [{"id": 42}]})
@@ -24,7 +29,6 @@ def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None
     with TestClient(create_app(settings)) as client:
 
         async def scenario() -> None:
-            await create_target("customers", "postgresql", {}, "CUSTOMER_DATABASE_URL")
             await create_operation(
                 "find_customer",
                 "customers",

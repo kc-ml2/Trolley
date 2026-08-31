@@ -4,15 +4,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from tortoise.contrib.fastapi import RegisterTortoise
 
+from trolley.application import targets
 from trolley.application.admins import ensure_admin_users
 from trolley.config import Settings, get_settings, validate_runtime_settings
 from trolley.mcp.server import create_mcp_app
 from trolley.persistence.database import tortoise_config
+from trolley.targets import configure_targets
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = validate_runtime_settings(settings or get_settings())
-    mcp_app = create_mcp_app(app_settings.public_base_url, app_settings.admin_emails)
+    configure_targets(app_settings.targets_file)
+    mcp_app = create_mcp_app(
+        app_settings.public_base_url,
+        app_settings.admin_emails,
+        app_settings,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -22,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             generate_schemas=True,
         ):
             await ensure_admin_users(app_settings.admin_emails)
+            await targets.sync_targets(app_settings)
             await mcp_app.state.mcp_server.registry.load()
             async with mcp_app.router.lifespan_context(mcp_app):
                 yield

@@ -24,21 +24,54 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 cp .env.example .env
+cp targets.example.yaml targets.yaml
+chmod 600 targets.yaml
 ```
 
-Configure administrator emails and a PostgreSQL Target credential in `.env`:
+Configure Trolley itself in `.env`:
 
 ```dotenv
 TROLLEY_DATABASE_URL=sqlite://./trolley.db
 TROLLEY_PUBLIC_BASE_URL=http://localhost:8000
 TROLLEY_ADMIN_EMAILS=admin@example.com
-
-PAYMENTS_DATABASE_URL=postgresql://user:password@localhost:5432/payments
+TROLLEY_TARGETS_FILE=./targets.yaml
 ```
 
-`TROLLEY_ADMIN_EMAILS` is required. Trolley validates it before opening the database and exits with a configuration error when it is empty. The `.env` file itself is optional: Docker, Kubernetes, and shell environments may inject the same value directly.
+`TROLLEY_ADMIN_EMAILS` is required. Target connections are configured only by the
+server operator in `targets.yaml`, not through MCP:
 
-Start Trolley once to initialize the database. When no active allowlisted admin exists, Trolley creates admin Users for the configured emails, but it never generates keys automatically.
+```yaml
+targets:
+  litellm-db-replica:
+    kind: postgresql
+    url: postgresql://user:password@127.0.0.1:5433/litellm
+    timeout: 10
+
+  orders-api:
+    kind: http
+    base_url: https://api.example.com
+    timeout: 30
+    headers:
+      Accept: application/json
+    bearer_token: replace-me
+```
+
+Keep this file readable only by the Trolley service account:
+
+```bash
+chmod 600 targets.yaml
+```
+
+Validate the file and test PostgreSQL connections locally:
+
+```bash
+trolley target list
+trolley target check
+trolley target test litellm-db-replica
+```
+
+Start Trolley once to initialize the database. Trolley synchronizes target names
+and kinds from the YAML file into its catalog; credentials remain only in the file.
 
 ```bash
 trolley
@@ -50,8 +83,6 @@ In another terminal, issue a key locally for an allowlisted admin:
 trolley admin issue-key admin@example.com --name local-admin
 ```
 
-The command prints the API key once. Restarting Trolley or running the command again creates another key; it does not reveal an existing one.
-
 Endpoints:
 
 ```text
@@ -59,78 +90,32 @@ MCP:    http://localhost:8000/mcp/
 Health: http://localhost:8000/health
 ```
 
-Connect an MCP client using the issued key as a Bearer token. A typical client configuration looks like:
-
-```json
-{
-  "mcpServers": {
-    "trolley": {
-      "url": "http://localhost:8000/mcp/",
-      "headers": {
-        "Authorization": "Bearer sk-trolley-issued-key"
-      }
-    }
-  }
-}
-```
-
-The exact configuration format depends on the MCP client. The resulting HTTP header must be:
-
-```http
-Authorization: Bearer sk-trolley-issued-key
-```
+Connect an MCP client with the issued Bearer key. Administrators can call
+`list_targets`, inspect a complete live PostgreSQL schema with `get_target_schema`,
+and create Operations. Target creation, deletion, credentials, and connectivity
+testing are deliberately not exposed through MCP.
 
 ## First PostgreSQL Tool
 
-### 1. Register a Target
+### 1. Inspect the Target schema
 
-Call the admin System Tool `create_target`:
-
-```json
-{
-  "name": "payments-db",
-  "kind": "postgresql",
-  "configuration": {
-    "timeout": 10
-  },
-  "secret_env": "PAYMENTS_DATABASE_URL"
-}
-```
-
-Trolley stores the environment variable name, not the PostgreSQL connection string.
-
-### 2. Test the connection
-
-Call the admin System Tool `test_target_connection`:
+Call the admin System Tool `get_target_schema`:
 
 ```json
-{
-  "name": "payments-db"
-}
+{"name": "litellm-db-replica"}
 ```
 
-Trolley opens a connection, runs `SELECT 1`, and closes it. A successful response contains no credential:
+It returns the complete live schema, including tables, views, columns, primary
+keys, and foreign keys. Trolley does not cache or paginate schema results.
 
-```json
-{
-  "target": "payments-db",
-  "kind": "postgresql",
-  "status": "connected",
-  "latency_ms": 12.5,
-  "server_version": "16.3"
-}
-```
-
-Target registration and connection testing are separate, so a temporarily unavailable database can still be configured.
-
-### 3. Create an Operation
+### 2. Create an Operation
 
 Call the admin System Tool `create_operation`:
 
 ```json
 {
   "name": "monthly_revenue",
-  "target_name": "payments-db",
+  "target_name": "litellm-db-replica",
   "description": "Return revenue for a calendar month",
   "access": "user",
   "definition": {
@@ -141,11 +126,7 @@ Call the admin System Tool `create_operation`:
   "input_schema": {
     "type": "object",
     "properties": {
-      "month": {
-        "type": "string",
-        "description": "First day of the month in YYYY-MM-DD format",
-        "pattern": "^\\d{4}-\\d{2}-01$"
-      }
+      "month": {"type": "string", "pattern": "^\\d{4}-\\d{2}-01$"}
     },
     "required": ["month"],
     "additionalProperties": false
@@ -153,30 +134,8 @@ Call the admin System Tool `create_operation`:
 }
 ```
 
-PostgreSQL SQL uses positional placeholders such as `$1`. The ordered `definition.parameters` list maps Tool arguments to those placeholders and must match `input_schema.required`.
-
-### 4. Invoke the dynamic Tool
-
-The active Operation is immediately exposed under its own MCP Tool name:
-
-```text
-monthly_revenue(month="2025-08-01")
-```
-
-No Trolley restart is required. A client may need to refresh `tools/list` before the new Tool appears.
-
-The compatibility System Tool `execute` can also invoke it:
-
-```json
-{
-  "name": "monthly_revenue",
-  "arguments": {
-    "month": "2025-08-01"
-  }
-}
-```
-
-Set `definition.fetch` to `false` for insert, update, and delete statements.
+The active Operation is immediately exposed under its own MCP Tool name. No
+Trolley restart is required.
 
 ## Users, keys, and access
 
@@ -289,8 +248,7 @@ System Tools are fixed in code and cannot be used as Operation names.
 - `list_api_keys`
 - `create_api_key`
 - `list_targets`
-- `create_target`
-- `test_target_connection`
+- `get_target_schema`
 - `create_operation`
 - `update_operation`
 - `disable_operation`
@@ -308,18 +266,15 @@ Active Operations are additional dynamic Tools. `update_operation` reloads a Too
 
 ## HTTP Targets
 
-Register an HTTP Target:
+Configure an HTTP Target in `targets.yaml`:
 
-```json
-{
-  "name": "orders-api",
-  "kind": "http",
-  "configuration": {
-    "base_url": "https://api.example.com",
-    "timeout": 30
-  },
-  "secret_env": "ORDERS_API_TOKEN"
-}
+```yaml
+targets:
+  orders-api:
+    kind: http
+    base_url: https://api.example.com
+    timeout: 30
+    bearer_token: replace-me
 ```
 
 Register an Operation:
@@ -344,7 +299,7 @@ Register an Operation:
 }
 ```
 
-HTTP credentials are currently sent as Bearer tokens. GET and DELETE arguments become query parameters; other methods receive a JSON body. `test_target_connection` currently supports PostgreSQL only.
+HTTP `bearer_token` credentials are sent as Bearer tokens. GET and DELETE arguments become query parameters; other methods receive a JSON body. HTTP schema inspection and connectivity testing are not currently implemented.
 
 ## Security model
 
@@ -372,7 +327,7 @@ authenticated caller
 → Execution audit record
 ```
 
-Target credentials remain in environment variables. Tool responses do not include connection strings or credential values.
+Target credentials remain in the server-owned targets YAML file. MCP Tool responses do not include connection strings, tokens, headers, or other target configuration.
 
 ## Configuration
 
@@ -380,9 +335,10 @@ Target credentials remain in environment variables. Tool responses do not includ
 |---|---|---|
 | `TROLLEY_DATABASE_URL` | `sqlite://./trolley.db` | Trolley's catalog and execution-history database |
 | `TROLLEY_PUBLIC_BASE_URL` | `http://localhost:8000` | Public base URL used by MCP authentication metadata |
+| `TROLLEY_TARGETS_FILE` | `targets.yaml` | Server-owned YAML file containing Target configuration and credentials |
 | `TROLLEY_ADMIN_EMAILS` | **required** | Comma-separated admin eligibility allowlist; also used to create admin Users when no active allowlisted admin exists |
 
-Target secrets use administrator-selected environment variable names such as `PAYMENTS_DATABASE_URL` and `ORDERS_API_TOKEN`. They are not required at server startup and are checked only when testing or executing their Target.
+Target configuration is changed by editing `TROLLEY_TARGETS_FILE` and restarting Trolley. Protect the file with operating-system permissions such as mode `0600`.
 
 Both `trolley` and `trolley admin issue-key ...` fail before creating or opening the database when `TROLLEY_ADMIN_EMAILS` is missing. The CLI currently listens on `0.0.0.0:8000`; `TROLLEY_PUBLIC_BASE_URL` controls MCP authentication metadata, not the bind port.
 

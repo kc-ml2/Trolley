@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -10,7 +9,6 @@ async def execute(
     configuration: dict,
     definition: dict,
     arguments: dict,
-    secret_env: str | None,
 ) -> Any:
     base_url = configuration.get("base_url", "").rstrip("/")
     path = definition.get("path", "")
@@ -20,11 +18,9 @@ async def execute(
 
     headers = dict(configuration.get("headers", {}))
     headers.update(definition.get("headers", {}))
-    if secret_env:
-        secret = os.getenv(secret_env)
-        if not secret:
-            raise ValueError(f"Credential environment variable is not set: {secret_env}")
-        headers["Authorization"] = f"Bearer {secret}"
+    bearer_token = configuration.get("bearer_token")
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
 
     body = None
     url = f"{base_url}{path}"

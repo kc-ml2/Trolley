@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite://./trolley.db"
     public_base_url: str = "http://localhost:8000"
+    targets_file: str = "targets.yaml"
     admin_emails: Annotated[frozenset[str], NoDecode] = frozenset()
 
     @field_validator("admin_emails", mode="before")

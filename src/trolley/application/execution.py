@@ -9,6 +9,7 @@ from trolley.connectors import database, http
 from trolley.domain.operations import ExecutionStatus
 from trolley.domain.targets import TargetKind
 from trolley.persistence.models import Execution, Operation
+from trolley.targets import get_targets
 
 
 async def execute_operation(
@@ -22,6 +23,9 @@ async def execute_operation(
         raise ValueError("Operation or target is inactive")
     if not await can_access_operation(context, operation):
         raise PermissionError("Operation access denied")
+    definition = get_targets().get(target.name)
+    if definition is None or definition.kind != target.kind:
+        raise ValueError("Operation target is not configured")
 
     arguments = arguments or {}
     validate(instance=arguments, schema=operation.input_schema)
@@ -35,12 +39,10 @@ async def execute_operation(
     try:
         if target.kind == TargetKind.POSTGRESQL:
             result = await database.execute(
-                target.configuration, operation.definition, arguments, target.secret_env
+                definition.configuration, operation.definition, arguments
             )
         elif target.kind == TargetKind.HTTP:
-            result = await http.execute(
-                target.configuration, operation.definition, arguments, target.secret_env
-            )
+            result = await http.execute(definition.configuration, operation.definition, arguments)
         else:
             raise ValueError(f"Unsupported target kind: {target.kind}")
         execution.status = ExecutionStatus.SUCCEEDED

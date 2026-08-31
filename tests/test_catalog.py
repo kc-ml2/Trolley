@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
 from trolley.application.operations import create_operation, list_operations
-from trolley.application.targets import create_target, list_targets
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.users import UserRole
 from trolley.main import create_app
+from trolley.persistence.models import Target
 
 
 def test_target_and_operation_catalog(tmp_path) -> None:
@@ -17,13 +17,7 @@ def test_target_and_operation_catalog(tmp_path) -> None:
     with TestClient(create_app(settings)) as client:
 
         async def scenario() -> None:
-            target = await create_target(
-                "customers",
-                "postgresql",
-                {"timeout": 5},
-                "CUSTOMER_DATABASE_URL",
-            )
-            assert target["secret_configured"] is False
+            await Target.create(name="customers", kind="postgresql")
 
             operation = await create_operation(
                 "find_customer",
@@ -40,7 +34,7 @@ def test_target_and_operation_catalog(tmp_path) -> None:
                 },
             )
             assert operation["target"] == "customers"
-            assert len(await list_targets()) == 1
+            assert await Target.all().count() == 1
             context = AuthContext(user_id="admin", api_key_id="key", role=UserRole.ADMIN)
             assert len(await list_operations(context)) == 1
 

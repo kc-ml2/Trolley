@@ -2,12 +2,13 @@ import asyncio
 
 import pytest
 
+from trolley.config import Settings
 from trolley.mcp.registry import DynamicToolRegistry
 from trolley.mcp.server import create_mcp_server
 
 
 def test_mcp_has_small_tool_surface() -> None:
-    server = create_mcp_server()
+    server = create_mcp_server(settings=Settings(_env_file=None))
 
     async def names() -> set[str]:
         return {tool.name for tool in await server.list_tools()}
@@ -21,8 +22,7 @@ def test_mcp_has_small_tool_surface() -> None:
         "list_api_keys",
         "create_api_key",
         "list_targets",
-        "create_target",
-        "test_target_connection",
+        "get_target_schema",
         "list_operations",
         "create_operation",
         "update_operation",

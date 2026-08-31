@@ -1,4 +1,3 @@
-import os
 from typing import Any
 
 from trolley.persistence.models import ApiKey, Operation, Target, User
@@ -29,9 +28,6 @@ def present_target(target: Target) -> dict[str, Any]:
         "id": str(target.id),
         "name": target.name,
         "kind": target.kind,
-        "configuration": target.configuration,
-        "secret_env": target.secret_env,
-        "secret_configured": bool(target.secret_env and os.getenv(target.secret_env)),
         "is_active": target.is_active,
     }
 

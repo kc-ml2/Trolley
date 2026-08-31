@@ -13,8 +13,8 @@ from trolley.application import grants, operations, targets, users
 from trolley.application.access import accessible_operation_names
 from trolley.application.execution import execute_operation
 from trolley.auth.context import AuthContext
+from trolley.config import Settings
 from trolley.domain.operations import OperationAccess
-from trolley.domain.targets import TargetKind
 from trolley.domain.users import UserOperationAccess, UserRole
 from trolley.mcp.constants import AUTH_CONTEXT_PARAMETER, SYSTEM_TOOL_POLICIES
 from trolley.mcp.enums import SystemToolName
@@ -86,6 +86,7 @@ class TrolleyMCPServer(MCPServer):
 def create_mcp_server(
     public_base_url: str = "http://localhost:8000",
     admin_emails: frozenset[str] = frozenset(),
+    settings: Settings | None = None,
 ) -> TrolleyMCPServer:
     base_url = public_base_url.rstrip("/")
     server = TrolleyMCPServer(
@@ -130,28 +131,18 @@ def create_mcp_server(
     async def create_api_key(email: str, name: str) -> dict:
         return await users.issue_api_key(email, name)
 
-    @server.system_tool(SystemToolName.LIST_TARGETS, description="List targets (admin)")
-    async def list_targets() -> list[dict]:
-        return await targets.list_targets()
+    if settings is not None:
 
-    @server.system_tool(
-        SystemToolName.CREATE_TARGET,
-        description="Register a PostgreSQL or HTTP target (admin)",
-    )
-    async def create_target(
-        name: str,
-        kind: TargetKind,
-        configuration: dict,
-        secret_env: str | None = None,
-    ) -> dict:
-        return await targets.create_target(name, kind, configuration, secret_env)
+        @server.system_tool(SystemToolName.LIST_TARGETS, description="List targets (admin)")
+        async def list_targets() -> list[dict]:
+            return await targets.list_targets(settings)
 
-    @server.system_tool(
-        SystemToolName.TEST_TARGET_CONNECTION,
-        description="Test connectivity to a registered target (admin)",
-    )
-    async def test_target_connection(name: str) -> dict:
-        return await targets.test_target_connection(name)
+        @server.system_tool(
+            SystemToolName.GET_TARGET_SCHEMA,
+            description="Inspect the complete live schema of a target (admin)",
+        )
+        async def get_target_schema(name: str) -> dict:
+            return await targets.get_target_schema(settings, name)
 
     @server.system_tool(
         SystemToolName.LIST_OPERATIONS,
@@ -257,8 +248,9 @@ def create_mcp_server(
 def create_mcp_app(
     public_base_url: str = "http://localhost:8000",
     admin_emails: frozenset[str] = frozenset(),
+    settings: Settings | None = None,
 ) -> Starlette:
-    server = create_mcp_server(public_base_url, admin_emails)
+    server = create_mcp_server(public_base_url, admin_emails, settings)
     app = server.streamable_http_app(
         streamable_http_path="/",
         stateless_http=True,

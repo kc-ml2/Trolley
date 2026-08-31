@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from trolley.application import grants, operations, targets, users
+from trolley.application import grants, operations, users
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.operations import OperationAccess
@@ -24,7 +24,7 @@ def test_operation_access_matrix_and_inactive_target(tmp_path) -> None:
             assigned_user = await User.create(email="assigned@example.com", name="Assigned")
             admin = await User.create(email="admin@example.com", name="Admin", role=UserRole.ADMIN)
             await users.update_user_access(assigned_user.email, UserOperationAccess.ASSIGNED_ONLY)
-            await targets.create_target("db", "postgresql", {}, "DATABASE_URL")
+            await Target.create(name="db", kind="postgresql")
             await operations.create_operation("public", "db", {"sql": "select 1"})
             await operations.create_operation(
                 "restricted",

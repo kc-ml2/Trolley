@@ -2,14 +2,14 @@ from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
-from trolley.application import grants, operations, targets, users
+from trolley.application import grants, operations, users
 from trolley.auth.api_keys import create_api_key
 from trolley.config import Settings
 from trolley.domain.operations import OperationAccess
 from trolley.domain.users import UserOperationAccess
 from trolley.main import create_app
 from trolley.mcp.token_verifier import TrolleyTokenVerifier
-from trolley.persistence.models import User
+from trolley.persistence.models import Target, User
 
 
 def test_dynamic_tool_list_respects_user_grants(tmp_path) -> None:
@@ -24,7 +24,7 @@ def test_dynamic_tool_list_respects_user_grants(tmp_path) -> None:
         async def scenario() -> None:
             user = await User.create(email="limited@example.com", name="Limited")
             _, secret = await create_api_key(user, "test")
-            await targets.create_target("db", "postgresql", {}, "DATABASE_URL")
+            await Target.create(name="db", kind="postgresql")
             await operations.create_operation("public_report", "db", {"sql": "select 1"})
             await operations.create_operation(
                 "private_report",

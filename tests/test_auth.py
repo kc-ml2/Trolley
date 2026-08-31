@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
-from trolley.application import operations, targets
+from trolley.application import operations
 from trolley.application.execution import execute_operation
 from trolley.auth.api_keys import create_api_key
 from trolley.auth.context import AuthContext
@@ -11,7 +11,7 @@ from trolley.domain.users import UserRole
 from trolley.main import create_app
 from trolley.mcp.enums import SystemToolName
 from trolley.mcp.token_verifier import TrolleyTokenVerifier
-from trolley.persistence.models import User
+from trolley.persistence.models import Target, User
 
 
 async def authenticated(
@@ -41,7 +41,7 @@ def test_bearer_auth_and_operation_access(tmp_path, monkeypatch) -> None:
             assert "trolley:admin" in admin_auth.scopes
             assert "trolley:admin" not in user_auth.scopes
 
-            await targets.create_target("payments", "postgresql", {}, "PAYMENTS_URL")
+            await Target.create(name="payments", kind="postgresql")
             await operations.create_operation("revenue", "payments", {"sql": "select 1"})
             await operations.create_operation(
                 "profit", "payments", {"sql": "select 2"}, access="admin"

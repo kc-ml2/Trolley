@@ -36,8 +36,6 @@ class Target(models.Model):
     id = fields.UUIDField(primary_key=True)
     name = fields.CharField(max_length=255, unique=True)
     kind = fields.CharEnumField(TargetKind)
-    configuration = fields.JSONField(default=dict)
-    secret_env = fields.CharField(max_length=255, null=True)
     is_active = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 

@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
 from trolley.application.operations import create_operation, disable_operation
-from trolley.application.targets import create_target
 from trolley.config import Settings
 from trolley.main import create_app
+from trolley.persistence.models import Target
 
 
 def test_dynamic_tool_live_reload(tmp_path) -> None:
@@ -18,7 +18,7 @@ def test_dynamic_tool_live_reload(tmp_path) -> None:
         async def scenario() -> None:
             server = app.routes[-1].app.state.mcp_server
             registry = server.registry
-            await create_target("payments", "postgresql", {}, "PAYMENTS_URL")
+            await Target.create(name="payments", kind="postgresql")
             await create_operation(
                 "monthly_revenue",
                 "payments",

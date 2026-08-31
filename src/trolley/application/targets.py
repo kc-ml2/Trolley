@@ -1,33 +1,56 @@
 from typing import Any
 
-from trolley.application.presenters import present_target
+from trolley.config import Settings
 from trolley.connectors import database
 from trolley.domain.targets import TargetKind
 from trolley.persistence.models import Target
+from trolley.targets import TargetDefinition, load_targets
 
 
-async def list_targets() -> list[dict[str, Any]]:
-    return [present_target(target) for target in await Target.all().order_by("name")]
+def configured_targets(settings: Settings) -> dict[str, TargetDefinition]:
+    return load_targets(settings.targets_file)
 
 
-async def create_target(
-    name: str,
-    kind: TargetKind,
-    configuration: dict[str, Any],
-    secret_env: str | None = None,
-) -> dict[str, Any]:
-    target = await Target.create(
-        name=name.strip(),
-        kind=kind,
-        configuration=configuration,
-        secret_env=secret_env,
-    )
-    return present_target(target)
+async def sync_targets(settings: Settings) -> None:
+    definitions = configured_targets(settings)
+    existing = {target.name: target for target in await Target.all()}
+    for name, definition in definitions.items():
+        target = existing.get(name)
+        if target is None:
+            await Target.create(name=name, kind=definition.kind)
+        elif target.kind != definition.kind or not target.is_active:
+            target.kind = definition.kind
+            target.is_active = True
+            await target.save()
+    for name, target in existing.items():
+        if name not in definitions and target.is_active:
+            target.is_active = False
+            await target.save()
 
 
-async def test_target_connection(name: str) -> dict[str, Any]:
-    target = await Target.get(name=name, is_active=True)
-    if target.kind != TargetKind.POSTGRESQL:
+async def list_targets(settings: Settings) -> list[dict[str, Any]]:
+    definitions = configured_targets(settings)
+    return [
+        {"name": definition.name, "kind": definition.kind}
+        for definition in sorted(definitions.values(), key=lambda item: item.name)
+    ]
+
+
+async def test_target_connection(settings: Settings, name: str) -> dict[str, Any]:
+    definition = configured_targets(settings).get(name)
+    if definition is None:
+        raise ValueError(f"Unknown target: {name}")
+    if definition.kind != TargetKind.POSTGRESQL:
         raise ValueError("Connection testing currently supports only PostgreSQL targets")
-    result = await database.test_connection(target.configuration, target.secret_env)
-    return {"target": target.name, "kind": target.kind, **result}
+    result = await database.test_connection(definition.configuration)
+    return {"target": definition.name, "kind": definition.kind, **result}
+
+
+async def get_target_schema(settings: Settings, name: str) -> dict[str, Any]:
+    definition = configured_targets(settings).get(name)
+    if definition is None:
+        raise ValueError(f"Unknown target: {name}")
+    if definition.kind != TargetKind.POSTGRESQL:
+        raise ValueError("Schema inspection currently supports only PostgreSQL targets")
+    schema = await database.inspect_schema(definition.configuration)
+    return {"target": definition.name, "kind": definition.kind, "schemas": schema}

@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from trolley.application import grants, operations, targets, users
+from trolley.application import grants, operations, users
 from trolley.application.execution import execute_operation
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
@@ -15,9 +15,15 @@ from trolley.persistence.models import User
 
 
 def test_user_specific_operation_access(tmp_path, monkeypatch) -> None:
+    targets_file = tmp_path / "targets.yaml"
+    targets_file.write_text(
+        "targets:\n  db:\n    kind: postgresql\n    url: postgresql://example/test\n"
+    )
+    targets_file.chmod(0o600)
     settings = Settings(
         _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
+        targets_file=str(targets_file),
         admin_emails=frozenset({"root@example.com"}),
     )
     connector = AsyncMock(return_value={"rows": [{"ok": 1}]})
@@ -28,7 +34,6 @@ def test_user_specific_operation_access(tmp_path, monkeypatch) -> None:
         async def scenario() -> None:
             user = await User.create(email="limited@example.com", name="Limited")
             other = await User.create(email="other@example.com", name="Other")
-            await targets.create_target("db", "postgresql", {}, "DATABASE_URL")
             await operations.create_operation("public_report", "db", {"sql": "select 1"})
             await operations.create_operation(
                 "private_report",

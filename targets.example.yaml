@@ -1,0 +1,13 @@
+targets:
+  payments-db:
+    kind: postgresql
+    url: postgresql://user:password@127.0.0.1:5432/payments
+    timeout: 10
+
+  orders-api:
+    kind: http
+    base_url: https://api.example.com
+    timeout: 30
+    headers:
+      Accept: application/json
+    bearer_token: replace-me
