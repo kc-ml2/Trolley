@@ -1,23 +1,45 @@
 # Trolley
 
-Trolley is an MCP execution gateway that gives AI agents controlled access to PostgreSQL databases and HTTP APIs.
+Trolley lets an MCP client use selected PostgreSQL queries and HTTP requests as tools without giving the client unrestricted access to the underlying service.
 
 ```text
-MCP client → Trolley → registered Operation → PostgreSQL / HTTP API
+MCP client → Trolley Tool → approved Operation → PostgreSQL / HTTP API
 ```
 
-Trolley does not run or manage agents, install processes on target servers, or manage resource groups, schedules, and watches.
+A server operator connects infrastructure once. An MCP administrator then creates narrowly scoped Operations at runtime. Regular users only see and invoke the Operations they are allowed to use.
+
+For example, an administrator can turn a SQL report into a Tool named `monthly_revenue`. An agent can then call:
+
+```text
+monthly_revenue(month="2026-08-01")
+```
+
+The agent does not receive the database URL, credentials, or SQL definition.
+
+## Who does what?
+
+| Role | What they do |
+|---|---|
+| Server operator | Installs Trolley, edits `targets.yaml`, protects credentials, and runs local connection checks |
+| MCP administrator | Inspects Target schemas and dynamically creates, updates, disables, and grants Operations through MCP |
+| MCP user or agent | Discovers and invokes only the dynamic Tools allowed for its Trolley identity |
+
+This separation is intentional: MCP administrators can build useful database and API tools, but they cannot add or change infrastructure credentials through MCP.
 
 ## Core concepts
 
-- **User**: a human or agent identity authenticated with a Bearer API key.
-- **Target**: a PostgreSQL database or HTTP API. Only admins can access Target configuration.
-- **Operation**: an allowed SQL statement or HTTP request exposed as a dynamic MCP Tool.
-- **Execution**: an Operation invocation, including caller, arguments, result, status, and timestamps.
+- **Target**: a PostgreSQL database or HTTP API configured by the server operator in `targets.yaml`.
+- **Operation**: an approved SQL statement or HTTP request stored in Trolley and exposed as a dynamic MCP Tool.
+- **User**: a human or agent identity authenticated with a Trolley Bearer API key.
+- **Execution**: an audited Operation invocation, including its caller, arguments, result, status, and timestamps.
+
+Trolley does not run agents or manage processes on Target servers.
 
 ## Quick start
 
 Python 3.11 or newer is required.
+
+### 1. Install Trolley
 
 ```bash
 python -m venv .venv
@@ -28,6 +50,8 @@ cp targets.example.yaml targets.yaml
 chmod 600 targets.yaml
 ```
 
+### 2. Configure the Trolley server
+
 Configure Trolley itself in `.env`:
 
 ```dotenv
@@ -37,8 +61,11 @@ TROLLEY_ADMIN_EMAILS=admin@example.com
 TROLLEY_TARGETS_FILE=./targets.yaml
 ```
 
-`TROLLEY_ADMIN_EMAILS` is required. Target connections are configured only by the
-server operator in `targets.yaml`, not through MCP:
+`TROLLEY_ADMIN_EMAILS` is the allowlist of identities that may receive MCP administrator privileges. It is required even for a local installation.
+
+### 3. Register infrastructure Targets
+
+The server operator—not an MCP client—configures Target connections in `targets.yaml`:
 
 ```yaml
 targets:
@@ -56,13 +83,15 @@ targets:
     bearer_token: replace-me
 ```
 
-Keep this file readable only by the Trolley service account:
+`targets.yaml` contains real credentials. Keep it readable only by the Trolley service account and do not commit it to Git:
 
 ```bash
 chmod 600 targets.yaml
 ```
 
-Validate the file and test PostgreSQL connections locally:
+The repository ignores `.env`, `targets.yaml`, and `trolley.db` by default.
+
+Validate the configuration and test PostgreSQL connections locally:
 
 ```bash
 trolley target list
@@ -70,18 +99,25 @@ trolley target check
 trolley target test litellm-db-replica
 ```
 
-Start Trolley once to initialize the database. Trolley synchronizes target names
-and kinds from the YAML file into its catalog; credentials remain only in the file.
+### 4. Start the server
+
+Start Trolley to initialize its catalog and serve MCP:
 
 ```bash
 trolley
 ```
 
-In another terminal, issue a key locally for an allowlisted admin:
+Trolley synchronizes Target names and kinds into its catalog, while credentials remain only in `targets.yaml`.
+
+### 5. Issue an administrator key
+
+In another terminal, issue a key locally for an allowlisted administrator:
 
 ```bash
 trolley admin issue-key admin@example.com --name local-admin
 ```
+
+The secret is printed once. Treat it like a password.
 
 Endpoints:
 
@@ -90,27 +126,71 @@ MCP:    http://localhost:8000/mcp/
 Health: http://localhost:8000/health
 ```
 
-Connect an MCP client with the issued Bearer key. Administrators can call
-`list_targets`, inspect a complete live PostgreSQL schema with `get_target_schema`,
-and create Operations. Target creation, deletion, credentials, and connectivity
-testing are deliberately not exposed through MCP.
+### 6. Connect an MCP client
 
-## First PostgreSQL Tool
+Use the issued key as an HTTP Bearer token. A typical MCP client configuration is:
 
-### 1. Inspect the Target schema
+```json
+{
+  "mcpServers": {
+    "trolley": {
+      "url": "http://localhost:8000/mcp/",
+      "headers": {
+        "Authorization": "Bearer sk-trolley-issued-key"
+      }
+    }
+  }
+}
+```
 
-Call the admin System Tool `get_target_schema`:
+The exact configuration file depends on the client, but the resulting request must contain:
+
+```http
+Authorization: Bearer sk-trolley-issued-key
+```
+
+After connecting, an administrator can list configured Targets, inspect a PostgreSQL schema, and create dynamic Operations. Target creation, deletion, credentials, and connectivity testing are deliberately unavailable through MCP.
+
+## Create your first dynamic PostgreSQL Tool
+
+The following workflow happens entirely through an administrator MCP connection. You do not edit Python code, commit generated Tool files, or restart Trolley.
+
+### 1. Discover available Targets
+
+Ask your MCP client to call `list_targets`, or simply prompt it with:
+
+```text
+List the Targets available in Trolley.
+```
+
+The response contains safe identity information only:
+
+```json
+[
+  {
+    "name": "litellm-db-replica",
+    "kind": "postgresql"
+  }
+]
+```
+
+Connection strings, credentials, HTTP headers, and other Target settings are never included.
+
+### 2. Inspect the live Target schema
+
+An administrator can call `get_target_schema`:
 
 ```json
 {"name": "litellm-db-replica"}
 ```
 
-It returns the complete live schema, including tables, views, columns, primary
-keys, and foreign keys. Trolley does not cache or paginate schema results.
+It returns the complete live PostgreSQL schema, including tables, views, columns, primary keys, and foreign keys. This gives the administrator—or an AI agent acting as the administrator—the context needed to write a valid, narrowly scoped query.
 
-### 2. Create an Operation
+Trolley currently reads the schema live and returns it in one response. It does not cache, snapshot, search, or paginate schema results.
 
-Call the admin System Tool `create_operation`:
+### 3. Create an Operation dynamically through MCP
+
+An MCP administrator calls `create_operation` with an approved SQL statement, its parameters, an input schema, and an access level:
 
 ```json
 {
@@ -134,8 +214,54 @@ Call the admin System Tool `create_operation`:
 }
 ```
 
-The active Operation is immediately exposed under its own MCP Tool name. No
-Trolley restart is required.
+`definition.parameters` maps Tool arguments to PostgreSQL placeholders in order: `month` becomes `$1`. The parameter names must match `input_schema.required`. `fetch: true` returns rows; use `fetch: false` for statements that only return a PostgreSQL status.
+
+### 4. Use the new Tool immediately
+
+The Operation is stored in Trolley's catalog database and immediately exposed under its own MCP Tool name:
+
+```text
+monthly_revenue(month="2026-08-01")
+```
+
+No Python file, Git commit, deployment, or Trolley restart is required. Some MCP clients may need to refresh their Tool list before the new Tool appears.
+
+A caller can also use the compatibility `execute` System Tool:
+
+```json
+{
+  "name": "monthly_revenue",
+  "arguments": {
+    "month": "2026-08-01"
+  }
+}
+```
+
+### 5. Update or remove the Tool at runtime
+
+An administrator can change its SQL, schema, description, or access policy with `update_operation`. Trolley reloads the Tool in-process. Calling `disable_operation` marks it inactive and removes it from the MCP Tool list.
+
+### Where dynamic Tools are stored
+
+Dynamic Tools are data, not source files:
+
+```text
+create_operation
+→ Operation row in trolley.db
+→ DynamicToolRegistry
+→ live MCP Tool
+→ shared Trolley executor
+→ configured Target
+```
+
+By default, `trolley.db` stores:
+
+- Operation definitions and access policies
+- Trolley Users and hashed API keys
+- explicit Operation grants
+- Execution audit records and results
+
+`trolley.db` is ignored by Git. Back it up as runtime state if you need to preserve dynamic Tools across server replacement. On ordinary Trolley restarts, active Operations are loaded from the database and registered again automatically.
 
 ## Users, keys, and access
 
@@ -143,8 +269,8 @@ All API key secrets are stored as SHA-256 hashes and returned only once when iss
 
 ### Roles and Operation access
 
-- `admin`: manages Users, API keys, Targets, Operations, and grants, and invokes every Operation.
-- `user`: accesses Operations according to the Operation visibility, User access mode, and explicit grants.
+- `admin`: manages Trolley Users, API keys, Operations, and grants; lists Targets; inspects PostgreSQL schemas; and invokes every Operation. It cannot change Target credentials through MCP.
+- `user`: discovers and invokes Operations according to the Operation visibility, User access mode, and explicit grants.
 
 An Operation has one access level:
 
@@ -157,7 +283,7 @@ A User has one Operation access mode:
 - `standard`: receives `user` Operations plus explicitly granted `restricted` Operations.
 - `assigned_only`: receives only explicitly granted non-admin Operations, including a specifically granted `user` Operation.
 
-Admins always see every active Operation. Other users never receive direct Target configuration or SQL definitions. Tool visibility and execution are both checked against the current database state.
+Admins always see every active Operation. Other users receive the Tool's name, description, and input schema, but never its SQL/HTTP definition or direct Target configuration. Tool visibility and execution permission are both checked against current catalog state, so revoking access takes effect without restarting Trolley.
 
 ### Admin lock
 
@@ -182,9 +308,9 @@ Consequences:
 - Removing an email from the allowlist removes admin scope from its existing keys after Trolley restarts.
 - When no active allowlisted admin exists, startup creates or promotes Users for the configured emails; it does not issue keys.
 
-### Create a user and issue a key
+### Give an agent access to Trolley
 
-An admin can call `create_user`:
+An administrator can create a separate Trolley identity for a person, service, or AI agent by calling `create_user`:
 
 ```json
 {
@@ -203,7 +329,7 @@ Then call `create_api_key`:
 }
 ```
 
-The `secret` in the response is shown once. Configure that secret as the user's MCP Bearer token.
+The `secret` in the response is shown once. Configure it as that user's MCP Bearer token. API key secrets are stored only as SHA-256 hashes, so Trolley cannot display an existing secret later; issue a new key if one is lost.
 
 ### Restrict a user to assigned Operations
 
@@ -236,9 +362,9 @@ That user now sees and invokes `monthly_revenue`, but does not receive other pub
 
 Use `list_operation_grants` with optional `email` and `operation_name` filters to inspect assignments. Grants to `admin` Operations are rejected.
 
-## System Tools
+## Built-in System Tools
 
-System Tools are fixed in code and cannot be used as Operation names.
+System Tools are fixed administrative and compatibility functions shipped with Trolley. Their names are reserved and cannot be reused by a dynamic Operation.
 
 ### Admin-only
 
@@ -264,9 +390,9 @@ System Tools are fixed in code and cannot be used as Operation names.
 
 Active Operations are additional dynamic Tools. `update_operation` reloads a Tool in-process, `disable_operation` removes it, and `reload_tools` synchronizes the full registry with the database.
 
-## HTTP Targets
+## Create a dynamic HTTP Tool
 
-Configure an HTTP Target in `targets.yaml`:
+As with databases, the server operator first configures the HTTP Target in `targets.yaml`:
 
 ```yaml
 targets:
@@ -277,7 +403,7 @@ targets:
     bearer_token: replace-me
 ```
 
-Register an Operation:
+After restarting Trolley, an MCP administrator dynamically registers an HTTP Operation:
 
 ```json
 {
@@ -299,7 +425,20 @@ Register an Operation:
 }
 ```
 
-HTTP `bearer_token` credentials are sent as Bearer tokens. GET and DELETE arguments become query parameters; other methods receive a JSON body. HTTP schema inspection and connectivity testing are not currently implemented.
+The Operation immediately appears as `get_orders(status=...)`. HTTP `bearer_token` credentials are sent as Bearer tokens. GET and DELETE arguments become query parameters; other methods receive a JSON body. HTTP schema inspection and connectivity testing are not currently implemented, so the administrator must know the API contract when creating the Operation.
+
+## Runtime state and backups
+
+A typical installation separates runtime state from safe configuration templates:
+
+| Path | Purpose | Commit to Git? |
+|---|---|---|
+| `.env` | Trolley process configuration | No |
+| `targets.yaml` | Target URLs, credentials, and headers | No |
+| `trolley.db` | Users, hashed keys, dynamic Operations, grants, and Execution history | No |
+| `.env.example`, `targets.example.yaml` | Safe configuration templates | Yes |
+
+Back up `targets.yaml` and `trolley.db` together when moving a Trolley installation. Protect both with operating-system permissions. A catalog backup without `targets.yaml` preserves Operation definitions but cannot connect them to infrastructure; a Target file without the catalog loses dynamic Tools and Trolley identities.
 
 ## Security model
 
@@ -323,11 +462,13 @@ authenticated caller
 → current Operation and Target state
 → Operation access level
 → JSON Schema validation
-→ connector execution
+→ shared SQL or HTTP executor
 → Execution audit record
 ```
 
-Target credentials remain in the server-owned targets YAML file. MCP Tool responses do not include connection strings, tokens, headers, or other target configuration.
+For PostgreSQL, argument values are passed through asyncpg parameter binding rather than interpolated into SQL. The database account configured in `targets.yaml` remains the final authority: use a read-only account or a physical read replica when Operations should only query data.
+
+Target credentials remain in the server-owned Target YAML file. MCP Tool responses do not include connection strings, tokens, headers, or other Target configuration. Dynamic Operations cannot execute Python or shell code; they are limited to the SQL or HTTP capabilities provided by their Target connector.
 
 ## Configuration
 
@@ -350,6 +491,6 @@ ruff check .
 ruff format --check .
 ```
 
-Trolley currently uses Tortoise's startup schema generation instead of migrations. During development, remove `trolley.db` after model changes, including this release's `User.operation_access` and `OperationGrant` additions. Migrations should be introduced before production deployment.
+Trolley currently uses Tortoise's startup schema generation instead of migrations. During development, remove `trolley.db` after model changes. Migrations should be introduced before production deployment. Do not remove an operational `trolley.db` without a backup: it contains dynamic Operations and Trolley identity state.
 
 Email OTP, OAuth onboarding, scheduled watches, and multi-process registry synchronization are not implemented yet.
