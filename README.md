@@ -16,6 +16,14 @@ monthly_revenue(month="2026-08-01")
 
 The agent does not receive the database URL, credentials, or SQL definition.
 
+## Why Trolley?
+
+Trolley helps teams safely turn internal capabilities into Tools that agents can discover and use. Users get useful access without handling infrastructure credentials, administrators keep control over what is allowed, and missing Tools can be requested and added as needs emerge.
+
+- Give agents useful access without exposing the underlying infrastructure.
+- Turn repeated internal work into governed, reusable Tools.
+- Let users request missing capabilities from the same workflow.
+
 ## Who does what?
 
 | Role | What they do |
