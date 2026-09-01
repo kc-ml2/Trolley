@@ -4,7 +4,6 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from trolley.domain.targets import TargetKind
 from trolley.mcp.constants import RESERVED_TOOL_NAMES
 from trolley.persistence.models import Target
 
@@ -40,8 +39,6 @@ def validate_definition(
     definition: dict[str, Any],
     input_schema: dict[str, Any],
 ) -> None:
-    if target.kind != TargetKind.POSTGRESQL:
-        return
     parameters = definition.get("parameters", [])
     if not isinstance(parameters, list) or not all(isinstance(item, str) for item in parameters):
         raise ValueError("PostgreSQL operation parameters must be a list of names")

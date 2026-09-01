@@ -1,12 +1,12 @@
 # Trolley
 
-Trolley lets an MCP client use selected PostgreSQL queries and HTTP requests as tools without giving the client unrestricted access to the underlying service.
+Trolley lets an MCP client use approved PostgreSQL queries as Tools, without giving it direct access to the database.
 
 ```text
-MCP client → Trolley Tool → approved Operation → PostgreSQL / HTTP API
+MCP client → Trolley Tool → approved Operation → PostgreSQL
 ```
 
-A server operator connects infrastructure once. An MCP administrator then creates narrowly scoped Operations at runtime. Regular users only see and invoke the Operations they are allowed to use.
+A server operator connects a PostgreSQL database once. An MCP administrator then creates safe, focused Operations as needed. Regular users only see and run the Operations they are allowed to use.
 
 For example, an administrator can turn a SQL report into a Tool named `monthly_revenue`. An agent can then call:
 
@@ -18,26 +18,26 @@ The agent does not receive the database URL, credentials, or SQL definition.
 
 ## Why Trolley?
 
-Trolley helps teams safely turn internal capabilities into Tools that agents can discover and use. Users get useful access without handling infrastructure credentials, administrators keep control over what is allowed, and missing Tools can be requested and added as needs emerge.
+Trolley helps teams turn internal database work into safe Tools for agents. Users can get their work done without database access, while administrators decide what each user can do.
 
-- Give agents useful access without exposing the underlying infrastructure.
-- Turn repeated internal work into governed, reusable Tools.
-- Let users request missing capabilities from the same workflow.
+- Let agents do useful work without direct access to databases.
+- Turn common internal tasks into safe, reusable Tools.
+- Let users ask for new Tools while they work.
 
 ## Who does what?
 
 | Role | What they do |
 |---|---|
 | Server operator | Installs Trolley, edits `targets.yaml`, protects credentials, and runs local connection checks |
-| MCP administrator | Inspects Target schemas and dynamically creates, updates, disables, and grants Operations through MCP |
-| MCP user or agent | Discovers and invokes only the dynamic Tools allowed for its Trolley identity |
+| MCP administrator | Reviews Target schemas and creates, updates, disables, and shares Operations through MCP |
+| MCP user or agent | Finds and runs only the Tools allowed for its Trolley account |
 
-This separation is intentional: MCP administrators can build useful database and API tools, but they cannot add or change infrastructure credentials through MCP.
+This keeps access simple and safe: MCP administrators can build useful database Tools, but they cannot add or change connection credentials through MCP.
 
 ## Core concepts
 
-- **Target**: a PostgreSQL database or HTTP API configured by the server operator in `targets.yaml`.
-- **Operation**: an approved SQL statement or HTTP request stored in Trolley and exposed as a dynamic MCP Tool.
+- **Target**: a PostgreSQL database configured by the server operator in `targets.yaml`.
+- **Operation**: an approved SQL statement stored in Trolley and exposed as a dynamic MCP Tool.
 - **User**: a human or agent identity authenticated with a Trolley Bearer API key.
 - **Execution**: an audited Operation invocation, including its caller, arguments, result, status, and timestamps.
 
@@ -81,14 +81,6 @@ targets:
     kind: postgresql
     url: postgresql://user:password@127.0.0.1:5433/litellm
     timeout: 10
-
-  orders-api:
-    kind: http
-    base_url: https://api.example.com
-    timeout: 30
-    headers:
-      Accept: application/json
-    bearer_token: replace-me
 ```
 
 `targets.yaml` contains real credentials. Keep it readable only by the Trolley service account and do not commit it to Git:
@@ -144,9 +136,11 @@ An agent can read the public onboarding document before Trolley is registered:
 http://localhost:8000/onboarding.md
 ```
 
-The document tells the agent how to prepare the MCP configuration without receiving the secret. The user remains responsible for obtaining an API key from an administrator and entering it directly into the MCP client's secret settings or a local `TROLLEY_API_KEY` environment variable. API keys should never be pasted into an agent conversation.
+The document helps the agent prepare the MCP settings without seeing the API key. The user gets a key from an administrator and enters it directly in the MCP client's secret settings or a local `TROLLEY_API_KEY` environment variable. Never paste an API key into an agent conversation.
 
-After connecting, the agent should call `list_operations` to discover the latest Operations available to the authenticated user, then call `execute` with arguments matching the selected Operation's `input_schema`. Calling `list_operations` again handles runtime Operation and permission changes without relying on a cached MCP Tool list. If no Operation meets the user's need, the agent may ask for confirmation and record a non-sensitive request with `request_operation`; `list_my_operation_requests` shows its status.
+After connecting, the agent calls `list_operations` to find the Operations available to the user. It then calls `execute` with inputs that match the selected Operation's `input_schema`. The agent can call `list_operations` again when Tools or permissions change.
+
+If no Operation meets the user's need, the agent can ask for permission to save a request with `request_operation`. The request must not contain secrets or sensitive data. The user can check its status with `list_my_operation_requests`.
 
 Use the issued key as an HTTP Bearer token. A typical MCP client configuration is:
 
@@ -194,7 +188,7 @@ The response contains safe identity information only:
 ]
 ```
 
-Connection strings, credentials, HTTP headers, and other Target settings are never included.
+Connection strings, credentials, and other Target settings are never included.
 
 ### 2. Inspect the live Target schema
 
@@ -303,13 +297,13 @@ A User has one Operation access mode:
 - `standard`: receives `user` Operations plus explicitly granted `restricted` Operations.
 - `assigned_only`: receives only explicitly granted non-admin Operations, including a specifically granted `user` Operation.
 
-Admins always see every active Operation. Other users receive the Tool's name, description, and input schema, but never its SQL/HTTP definition or direct Target configuration. Tool visibility and execution permission are both checked against current catalog state, so revoking access takes effect without restarting Trolley.
+Admins always see every active Operation. Other users receive the Tool's name, description, and input schema, but never its SQL definition or direct Target configuration. Tool visibility and execution permission are both checked against current catalog state, so revoking access takes effect without restarting Trolley.
 
 ### Request a missing Operation
 
-After checking `list_operations`, an authenticated user can call `request_operation` with a title, description, and reason. The agent should obtain the user's confirmation first and must not include credentials or sensitive data. Users can track their own requests with `list_my_operation_requests`.
+After checking `list_operations`, a signed-in user can call `request_operation` with a title, description, and reason. The agent must ask the user first and must not include secrets or sensitive data. Users can check their requests with `list_my_operation_requests`.
 
-Administrators review requests with `list_operation_requests`. After creating the corresponding Operation, an administrator calls `resolve_operation_request` with status `fulfilled` and the active Operation name, or rejects it with status `rejected` and an explanatory note. Request states are `pending`, `fulfilled`, and `rejected`.
+Administrators review requests with `list_operation_requests`. After creating the requested Operation, an administrator marks the request as `fulfilled` and links the new Operation. They can also mark it as `rejected` and add a note. Request states are `pending`, `fulfilled`, and `rejected`.
 
 ### Admin lock
 
@@ -357,7 +351,7 @@ Then call `create_api_key`:
 
 The `secret` in the response is shown once. Configure it as that user's MCP Bearer token. API key secrets are stored only as SHA-256 hashes, so Trolley cannot display an existing secret later; issue a new key if one is lost.
 
-When SMTP is configured, an administrator can instead call `invite_user`. It creates a normal user when needed (or reuses an existing active non-admin user), issues an API key, and emails the key with the onboarding URL. The secret is not returned through MCP. If delivery fails, the newly issued key is immediately disabled while the User remains available for a retry.
+When SMTP is configured, an administrator can call `invite_user` instead. It creates or reuses an active regular user, makes an API key, and emails the key with the onboarding URL. The key is not returned through MCP. If the email fails, Trolley disables the new key so the administrator can safely try again.
 
 ### Restrict a user to assigned Operations
 
@@ -418,43 +412,6 @@ System Tools are fixed administrative and compatibility functions shipped with T
 
 Active Operations are additional dynamic Tools. `update_operation` reloads a Tool in-process, `disable_operation` removes it, and `reload_tools` synchronizes the full registry with the database.
 
-## Create a dynamic HTTP Tool
-
-As with databases, the server operator first configures the HTTP Target in `targets.yaml`:
-
-```yaml
-targets:
-  orders-api:
-    kind: http
-    base_url: https://api.example.com
-    timeout: 30
-    bearer_token: replace-me
-```
-
-After restarting Trolley, an MCP administrator dynamically registers an HTTP Operation:
-
-```json
-{
-  "name": "get_orders",
-  "target_name": "orders-api",
-  "description": "List orders",
-  "access": "user",
-  "definition": {
-    "method": "GET",
-    "path": "/orders"
-  },
-  "input_schema": {
-    "type": "object",
-    "properties": {
-      "status": {"type": "string"}
-    },
-    "additionalProperties": false
-  }
-}
-```
-
-The Operation immediately appears as `get_orders(status=...)`. HTTP `bearer_token` credentials are sent as Bearer tokens. GET and DELETE arguments become query parameters; other methods receive a JSON body. HTTP schema inspection and connectivity testing are not currently implemented, so the administrator must know the API contract when creating the Operation.
-
 ## Runtime state and backups
 
 A typical installation separates runtime state from safe configuration templates:
@@ -462,7 +419,7 @@ A typical installation separates runtime state from safe configuration templates
 | Path | Purpose | Commit to Git? |
 |---|---|---|
 | `.env` | Trolley process configuration | No |
-| `targets.yaml` | Target URLs, credentials, and headers | No |
+| `targets.yaml` | PostgreSQL URLs and connection settings | No |
 | `trolley.db` | Users, hashed keys, dynamic Operations, grants, and Execution history | No |
 | `.env.example`, `targets.example.yaml` | Safe configuration templates | Yes |
 
@@ -490,13 +447,13 @@ authenticated caller
 → current Operation and Target state
 → Operation access level
 → JSON Schema validation
-→ shared SQL or HTTP executor
+→ shared PostgreSQL executor
 → Execution audit record
 ```
 
 For PostgreSQL, argument values are passed through asyncpg parameter binding rather than interpolated into SQL. The database account configured in `targets.yaml` remains the final authority: use a read-only account or a physical read replica when Operations should only query data.
 
-Target credentials remain in the server-owned Target YAML file. MCP Tool responses do not include connection strings, tokens, headers, or other Target configuration. Dynamic Operations cannot execute Python or shell code; they are limited to the SQL or HTTP capabilities provided by their Target connector.
+Target credentials remain in the server-owned Target YAML file. MCP Tool responses do not include connection strings or other Target configuration. Dynamic Operations cannot execute Python or shell code; they are limited to approved PostgreSQL statements.
 
 ## Configuration
 

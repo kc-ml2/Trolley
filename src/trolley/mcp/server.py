@@ -96,7 +96,7 @@ def create_mcp_server(
     server = TrolleyMCPServer(
         name="trolley",
         title="Trolley",
-        description="Execute registered PostgreSQL and HTTP operations",
+        description="Execute registered PostgreSQL operations",
         instructions=(
             "Trolley operations may change at runtime. Call list_operations after "
             "connecting to discover the operations currently available to you. Use "

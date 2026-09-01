@@ -5,9 +5,8 @@ from jsonschema import validate
 
 from trolley.application.access import can_access_operation
 from trolley.auth.context import AuthContext
-from trolley.connectors import database, http
+from trolley.connectors import database
 from trolley.domain.operations import ExecutionStatus
-from trolley.domain.targets import TargetKind
 from trolley.persistence.models import Execution, Operation
 from trolley.targets import get_targets
 
@@ -37,14 +36,7 @@ async def execute_operation(
         api_key_id=context.api_key_id,
     )
     try:
-        if target.kind == TargetKind.POSTGRESQL:
-            result = await database.execute(
-                definition.configuration, operation.definition, arguments
-            )
-        elif target.kind == TargetKind.HTTP:
-            result = await http.execute(definition.configuration, operation.definition, arguments)
-        else:
-            raise ValueError(f"Unsupported target kind: {target.kind}")
+        result = await database.execute(definition.configuration, operation.definition, arguments)
         execution.status = ExecutionStatus.SUCCEEDED
         execution.result = result
         return {

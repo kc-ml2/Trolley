@@ -77,11 +77,8 @@ def main() -> None:
         if args.target_command == "check":
             definitions = targets.configured_targets(settings)
             for definition in sorted(definitions.values(), key=lambda item: item.name):
-                if definition.kind == "postgresql":
-                    result = asyncio.run(targets.test_target_connection(settings, definition.name))
-                    print(f"{definition.name}\t{definition.kind}\t{result['status']}")
-                else:
-                    print(f"{definition.name}\t{definition.kind}\tconfigured")
+                result = asyncio.run(targets.test_target_connection(settings, definition.name))
+                print(f"{definition.name}\t{definition.kind}\t{result['status']}")
             return
 
     if args.command is None:

@@ -47,9 +47,7 @@ def load_targets(path: str | Path) -> dict[str, TargetDefinition]:
         except ValueError as error:
             raise ValueError(f"unsupported target kind for {name}: {value.get('kind')}") from error
         configuration = {key: item for key, item in value.items() if key != "kind"}
-        if kind == TargetKind.POSTGRESQL and not configuration.get("url"):
+        if not configuration.get("url"):
             raise ValueError(f"PostgreSQL target needs 'url': {name}")
-        if kind == TargetKind.HTTP and not configuration.get("base_url"):
-            raise ValueError(f"HTTP target needs 'base_url': {name}")
         definitions[name] = TargetDefinition(name, kind, configuration)
     return definitions

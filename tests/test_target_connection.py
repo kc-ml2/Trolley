@@ -47,6 +47,14 @@ def test_rejects_postgresql_target_without_url(tmp_path) -> None:
         load_targets(path)
 
 
+def test_rejects_non_postgresql_target(tmp_path) -> None:
+    path = tmp_path / "targets.yaml"
+    path.write_text("targets:\n  api:\n    kind: http\n    base_url: https://example.com\n")
+    path.chmod(0o600)
+    with pytest.raises(ValueError, match="unsupported target kind"):
+        load_targets(path)
+
+
 def test_rejects_targets_file_with_open_permissions(tmp_path) -> None:
     path = tmp_path / "targets.yaml"
     path.write_text("targets: {}\n")

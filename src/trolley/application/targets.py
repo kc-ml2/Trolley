@@ -2,7 +2,6 @@ from typing import Any
 
 from trolley.config import Settings
 from trolley.connectors import database
-from trolley.domain.targets import TargetKind
 from trolley.persistence.models import Target
 from trolley.targets import TargetDefinition, load_targets
 
@@ -40,8 +39,6 @@ async def test_target_connection(settings: Settings, name: str) -> dict[str, Any
     definition = configured_targets(settings).get(name)
     if definition is None:
         raise ValueError(f"Unknown target: {name}")
-    if definition.kind != TargetKind.POSTGRESQL:
-        raise ValueError("Connection testing currently supports only PostgreSQL targets")
     result = await database.test_connection(definition.configuration)
     return {"target": definition.name, "kind": definition.kind, **result}
 
@@ -50,7 +47,5 @@ async def get_target_schema(settings: Settings, name: str) -> dict[str, Any]:
     definition = configured_targets(settings).get(name)
     if definition is None:
         raise ValueError(f"Unknown target: {name}")
-    if definition.kind != TargetKind.POSTGRESQL:
-        raise ValueError("Schema inspection currently supports only PostgreSQL targets")
     schema = await database.inspect_schema(definition.configuration)
     return {"target": definition.name, "kind": definition.kind, "schemas": schema}
