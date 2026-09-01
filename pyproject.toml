@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "trolley"
 version = "0.1.0"
-description = "A small MCP gateway for approved PostgreSQL operations"
+description = "An MCP server for exposing approved PostgreSQL operations as tools"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
