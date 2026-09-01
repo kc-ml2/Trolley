@@ -4,6 +4,7 @@ from trolley.application.presenters import present_api_key, present_user
 from trolley.auth.api_keys import create_api_key
 from trolley.auth.roles import normalize_email, validate_role_assignment
 from trolley.domain.users import UserOperationAccess, UserRole
+from trolley.email import EmailService
 from trolley.persistence.models import ApiKey, User
 
 
@@ -22,6 +23,50 @@ async def create_user(
     validate_role_assignment(email, role, admin_emails)
     user = await User.create(email=email, name=name.strip(), role=role)
     return present_user(user)
+
+
+async def invite_user(
+    email: str,
+    name: str,
+    key_name: str,
+    email_service: EmailService,
+    onboarding_url: str,
+) -> dict[str, Any]:
+    email = normalize_email(email)
+    user = await User.get_or_none(email=email)
+    if user is None:
+        user = await User.create(email=email, name=name.strip(), role=UserRole.USER)
+    elif user.role != UserRole.USER or not user.is_active:
+        raise ValueError("Only an active non-admin user can be invited")
+
+    key, secret = await create_api_key(user, key_name.strip())
+    try:
+        await email_service.send(
+            user.email,
+            "You have been invited to Trolley",
+            f"""Hello {user.name},
+
+You have been invited to Trolley.
+
+API key: {secret}
+
+Treat this key like a password. Do not paste it into an agent conversation.
+Enter it directly in your MCP client's secret settings or a local
+TROLLEY_API_KEY environment variable.
+
+Onboarding instructions: {onboarding_url}
+""",
+        )
+    except Exception:
+        key.is_active = False
+        await key.save()
+        raise
+
+    return {
+        "user": present_user(user),
+        "api_key": present_api_key(key),
+        "email_sent": True,
+    }
 
 
 async def update_user_access(

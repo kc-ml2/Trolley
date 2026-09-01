@@ -12,6 +12,16 @@ def test_admin_emails_parse_from_comma_separated_environment(monkeypatch) -> Non
     assert settings.admin_emails == frozenset({"admin@example.com", "ops@example.com"})
 
 
+def test_email_from_is_required_when_smtp_is_configured() -> None:
+    settings = Settings(
+        _env_file=None,
+        admin_emails=frozenset({"admin@example.com"}),
+        smtp_host="smtp.example.com",
+    )
+    with pytest.raises(ConfigurationError, match="TROLLEY_EMAIL_FROM"):
+        validate_runtime_settings(settings)
+
+
 def test_runtime_settings_require_admin_email(monkeypatch) -> None:
     monkeypatch.delenv("TROLLEY_ADMIN_EMAILS", raising=False)
     settings = Settings(_env_file=None)

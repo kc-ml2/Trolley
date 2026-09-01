@@ -9,13 +9,15 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
-from trolley.application import grants, operations, targets, users
+from trolley.application import grants, operation_requests, operations, targets, users
 from trolley.application.access import accessible_operation_names
 from trolley.application.execution import execute_operation
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
+from trolley.domain.operation_requests import OperationRequestStatus
 from trolley.domain.operations import OperationAccess
 from trolley.domain.users import UserOperationAccess, UserRole
+from trolley.email import EmailService
 from trolley.mcp.constants import AUTH_CONTEXT_PARAMETER, SYSTEM_TOOL_POLICIES
 from trolley.mcp.enums import SystemToolName
 from trolley.mcp.pipeline import current_tool_context, validate_tool
@@ -89,10 +91,23 @@ def create_mcp_server(
     settings: Settings | None = None,
 ) -> TrolleyMCPServer:
     base_url = public_base_url.rstrip("/")
+    email_service = EmailService(settings or Settings(_env_file=None))
+    onboarding_url = f"{base_url}/onboarding.md"
     server = TrolleyMCPServer(
         name="trolley",
         title="Trolley",
         description="Execute registered PostgreSQL and HTTP operations",
+        instructions=(
+            "Trolley operations may change at runtime. Call list_operations after "
+            "connecting to discover the operations currently available to you. Use "
+            "execute with an operation name and arguments matching its input_schema. "
+            "Call list_operations again whenever an expected operation is missing or "
+            "permissions may have changed. If no operation meets the user's need, ask "
+            "for confirmation before recording it with request_operation. Never include "
+            "credentials or sensitive data in a request. Dynamic operation tools are "
+            "conveniences; prefer list_operations and execute when the cached tool list "
+            "may be stale."
+        ),
         version="0.1.0",
         token_verifier=TrolleyTokenVerifier(admin_emails),
         auth=AuthSettings(
@@ -101,6 +116,7 @@ def create_mcp_server(
             required_scopes=[],
         ),
     )
+    server.email_service = email_service
 
     @server.system_tool(SystemToolName.LIST_USERS, description="List users (admin)")
     async def list_users() -> list[dict]:
@@ -109,6 +125,13 @@ def create_mcp_server(
     @server.system_tool(SystemToolName.CREATE_USER, description="Create a user (admin)")
     async def create_user(email: str, name: str, role: UserRole = UserRole.USER) -> dict:
         return await users.create_user(email, name, role, admin_emails=admin_emails)
+
+    @server.system_tool(
+        SystemToolName.INVITE_USER,
+        description="Create a user and email a one-time Trolley API key (admin)",
+    )
+    async def invite_user(email: str, name: str, key_name: str = "initial-access") -> dict:
+        return await users.invite_user(email, name, key_name, email_service, onboarding_url)
 
     @server.system_tool(
         SystemToolName.UPDATE_USER_ACCESS,
@@ -146,10 +169,61 @@ def create_mcp_server(
 
     @server.system_tool(
         SystemToolName.LIST_OPERATIONS,
-        description="List operations visible to the current user",
+        description=(
+            "Discover the operations currently available to the authenticated user. "
+            "Call this after connecting and again when operations or permissions may "
+            "have changed."
+        ),
     )
     async def list_operations(*, auth_context: AuthContext) -> list[dict]:
         return await operations.list_operations(auth_context)
+
+    @server.system_tool(
+        SystemToolName.REQUEST_OPERATION,
+        description=(
+            "Record a request for a missing operation after checking list_operations "
+            "and obtaining the user's confirmation. Do not include credentials or "
+            "sensitive data."
+        ),
+    )
+    async def request_operation(
+        title: str,
+        description: str,
+        reason: str,
+        *,
+        auth_context: AuthContext,
+    ) -> dict:
+        return await operation_requests.request_operation(title, description, reason, auth_context)
+
+    @server.system_tool(
+        SystemToolName.LIST_MY_OPERATION_REQUESTS,
+        description="List the authenticated user's operation requests and their status",
+    )
+    async def list_my_operation_requests(*, auth_context: AuthContext) -> list[dict]:
+        return await operation_requests.list_my_operation_requests(auth_context)
+
+    @server.system_tool(
+        SystemToolName.LIST_OPERATION_REQUESTS,
+        description="List operation requests for administrator review",
+    )
+    async def list_operation_requests(
+        status: OperationRequestStatus | None = None,
+    ) -> list[dict]:
+        return await operation_requests.list_operation_requests(status)
+
+    @server.system_tool(
+        SystemToolName.RESOLVE_OPERATION_REQUEST,
+        description="Mark an operation request as fulfilled or rejected (admin)",
+    )
+    async def resolve_operation_request(
+        request_id: str,
+        status: OperationRequestStatus,
+        admin_note: str = "",
+        operation_name: str | None = None,
+    ) -> dict:
+        return await operation_requests.resolve_operation_request(
+            request_id, status, admin_note, operation_name
+        )
 
     @server.system_tool(
         SystemToolName.CREATE_OPERATION,
@@ -232,7 +306,10 @@ def create_mcp_server(
 
     @server.system_tool(
         SystemToolName.EXECUTE,
-        description="Execute an operation visible to the current user",
+        description=(
+            "Execute an available operation by name. Use list_operations to discover "
+            "the operation and construct arguments matching its input_schema."
+        ),
     )
     async def execute(
         name: str,
@@ -258,4 +335,5 @@ def create_mcp_app(
         host="0.0.0.0",
     )
     app.state.mcp_server = server
+    app.state.email_service = server.email_service
     return app

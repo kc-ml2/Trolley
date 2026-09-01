@@ -18,12 +18,17 @@ def test_mcp_has_small_tool_surface() -> None:
     assert asyncio.run(names()) == {
         "list_users",
         "create_user",
+        "invite_user",
         "update_user_access",
         "list_api_keys",
         "create_api_key",
         "list_targets",
         "get_target_schema",
         "list_operations",
+        "request_operation",
+        "list_my_operation_requests",
+        "list_operation_requests",
+        "resolve_operation_request",
         "create_operation",
         "update_operation",
         "disable_operation",
@@ -33,6 +38,13 @@ def test_mcp_has_small_tool_surface() -> None:
         "reload_tools",
         "execute",
     }
+
+
+def test_server_instructs_agents_to_discover_operations() -> None:
+    server = create_mcp_server()
+
+    assert "Call list_operations after connecting" in server._lowlevel_server.instructions
+    assert "Use execute" in server._lowlevel_server.instructions
 
 
 def test_system_tool_decorator_hides_injected_context_and_enforces_auth() -> None:

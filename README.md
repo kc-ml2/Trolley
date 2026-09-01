@@ -122,11 +122,23 @@ The secret is printed once. Treat it like a password.
 Endpoints:
 
 ```text
-MCP:    http://localhost:8000/mcp/
-Health: http://localhost:8000/health
+MCP:        http://localhost:8000/mcp/
+Onboarding: http://localhost:8000/onboarding.md
+Discovery:  http://localhost:8000/.well-known/trolley
+Health:     http://localhost:8000/health
 ```
 
 ### 6. Connect an MCP client
+
+An agent can read the public onboarding document before Trolley is registered:
+
+```text
+http://localhost:8000/onboarding.md
+```
+
+The document tells the agent how to prepare the MCP configuration without receiving the secret. The user remains responsible for obtaining an API key from an administrator and entering it directly into the MCP client's secret settings or a local `TROLLEY_API_KEY` environment variable. API keys should never be pasted into an agent conversation.
+
+After connecting, the agent should call `list_operations` to discover the latest Operations available to the authenticated user, then call `execute` with arguments matching the selected Operation's `input_schema`. Calling `list_operations` again handles runtime Operation and permission changes without relying on a cached MCP Tool list. If no Operation meets the user's need, the agent may ask for confirmation and record a non-sensitive request with `request_operation`; `list_my_operation_requests` shows its status.
 
 Use the issued key as an HTTP Bearer token. A typical MCP client configuration is:
 
@@ -285,6 +297,12 @@ A User has one Operation access mode:
 
 Admins always see every active Operation. Other users receive the Tool's name, description, and input schema, but never its SQL/HTTP definition or direct Target configuration. Tool visibility and execution permission are both checked against current catalog state, so revoking access takes effect without restarting Trolley.
 
+### Request a missing Operation
+
+After checking `list_operations`, an authenticated user can call `request_operation` with a title, description, and reason. The agent should obtain the user's confirmation first and must not include credentials or sensitive data. Users can track their own requests with `list_my_operation_requests`.
+
+Administrators review requests with `list_operation_requests`. After creating the corresponding Operation, an administrator calls `resolve_operation_request` with status `fulfilled` and the active Operation name, or rejects it with status `rejected` and an explanatory note. Request states are `pending`, `fulfilled`, and `rejected`.
+
 ### Admin lock
 
 `TROLLEY_ADMIN_EMAILS` is the authoritative allowlist for administrator eligibility:
@@ -330,6 +348,8 @@ Then call `create_api_key`:
 ```
 
 The `secret` in the response is shown once. Configure it as that user's MCP Bearer token. API key secrets are stored only as SHA-256 hashes, so Trolley cannot display an existing secret later; issue a new key if one is lost.
+
+When SMTP is configured, an administrator can instead call `invite_user`. It creates a normal user when needed (or reuses an existing active non-admin user), issues an API key, and emails the key with the onboarding URL. The secret is not returned through MCP. If delivery fails, the newly issued key is immediately disabled while the User remains available for a retry.
 
 ### Restrict a user to assigned Operations
 
@@ -478,6 +498,17 @@ Target credentials remain in the server-owned Target YAML file. MCP Tool respons
 | `TROLLEY_PUBLIC_BASE_URL` | `http://localhost:8000` | Public base URL used by MCP authentication metadata |
 | `TROLLEY_TARGETS_FILE` | `targets.yaml` | Server-owned YAML file containing Target configuration and credentials |
 | `TROLLEY_ADMIN_EMAILS` | **required** | Comma-separated admin eligibility allowlist; also used to create admin Users when no active allowlisted admin exists |
+| `TROLLEY_EMAIL_FROM` | — | Sender address used for invitations; required with `TROLLEY_SMTP_HOST` |
+| `TROLLEY_SMTP_HOST` | — | SMTP server hostname; omit it to disable email delivery |
+| `TROLLEY_SMTP_PORT` | `587` | SMTP server port |
+| `TROLLEY_SMTP_USERNAME` | — | Optional SMTP username; requires a password |
+| `TROLLEY_SMTP_PASSWORD` | — | Optional SMTP password, stored as a secret setting |
+| `TROLLEY_SMTP_SECURITY` | `starttls` | SMTP transport security: `plain`, `starttls`, or `tls` |
+| `TROLLEY_SMTP_TIMEOUT` | `10` | SMTP connection timeout in seconds |
+
+When `TROLLEY_SMTP_HOST` is configured, startup performs an SMTP connection, TLS, authentication, and `NOOP` check without sending a message. A failed check prevents startup, ensuring `invite_user` is not exposed with unavailable email delivery. When the host is omitted, email is disabled and `/health` reports it as such.
+
+`GET /onboarding.md` provides public, agent-readable connection instructions, and `GET /.well-known/trolley` exposes the MCP URL and authentication metadata as JSON. Neither endpoint issues, accepts, or stores API keys.
 
 Target configuration is changed by editing `TROLLEY_TARGETS_FILE` and restarting Trolley. Protect the file with operating-system permissions such as mode `0600`.
 

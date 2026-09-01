@@ -1,5 +1,6 @@
 from tortoise import fields, models
 
+from trolley.domain.operation_requests import OperationRequestStatus
 from trolley.domain.operations import ExecutionStatus, OperationAccess
 from trolley.domain.targets import TargetKind
 from trolley.domain.users import UserOperationAccess, UserRole
@@ -18,6 +19,7 @@ class User(models.Model):
 
     api_keys: fields.ReverseRelation["ApiKey"]
     operation_grants: fields.ReverseRelation["OperationGrant"]
+    operation_requests: fields.ReverseRelation["OperationRequest"]
 
 
 class ApiKey(models.Model):
@@ -71,6 +73,23 @@ class OperationGrant(models.Model):
 
     class Meta:
         unique_together = (("user", "operation"),)
+
+
+class OperationRequest(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    requested_by: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
+        "models.User", related_name="operation_requests", on_delete=fields.CASCADE
+    )
+    operation: fields.ForeignKeyNullableRelation[Operation] = fields.ForeignKeyField(
+        "models.Operation", related_name="requests", null=True, on_delete=fields.SET_NULL
+    )
+    title = fields.CharField(max_length=255)
+    description = fields.TextField()
+    reason = fields.TextField(default="")
+    status = fields.CharEnumField(OperationRequestStatus, default=OperationRequestStatus.PENDING)
+    admin_note = fields.TextField(default="")
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
 
 
 class Execution(models.Model):
