@@ -351,7 +351,9 @@ Then call `create_api_key`:
 
 The `secret` in the response is shown once. Configure it as that user's MCP Bearer token. API key secrets are stored only as SHA-256 hashes, so Trolley cannot display an existing secret later; issue a new key if one is lost.
 
-When SMTP is configured, an administrator can call `invite_user` instead. It creates or reuses an active regular user, makes an API key, and emails the key with the onboarding URL. The key is not returned through MCP. If the email fails, Trolley disables the new key so the administrator can safely try again.
+When SMTP is configured, an administrator can call `invite_user` instead. It creates or reuses an active user, makes an API key, and emails the key with the onboarding URL. An email in `TROLLEY_ADMIN_EMAILS` is invited as an admin; any other email is invited as a regular user. The key is not returned through MCP. If the email fails, Trolley disables the new key so the administrator can safely try again.
+
+The first admin still needs a local key from `trolley admin issue-key`. After connecting, that admin can use `invite_user` to email keys to other allowlisted admins.
 
 ### Restrict a user to assigned Operations
 

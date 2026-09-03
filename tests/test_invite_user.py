@@ -54,6 +54,63 @@ def test_invite_user_emails_key_without_returning_secret(tmp_path) -> None:
         client.portal.call(scenario)
 
 
+def test_invite_user_emails_key_to_allowlisted_admin(tmp_path) -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"owner@example.com", "admin2@example.com"}),
+    )
+    service = EmailService(settings)
+    service.send = AsyncMock()
+
+    with TestClient(create_app(settings)) as client:
+
+        async def scenario() -> None:
+            existing_admin = await User.get(email="admin2@example.com")
+            result = await invite_user(
+                " Admin2@Example.com ",
+                "Second Admin",
+                "admin-access",
+                service,
+                "https://trolley.example.com/onboarding.md",
+                admin_emails=settings.admin_emails,
+            )
+            assert result["user"]["id"] == str(existing_admin.id)
+            assert result["user"]["role"] == "admin"
+            assert result["email_sent"] is True
+            assert "secret" not in result
+
+        client.portal.call(scenario)
+
+
+def test_invite_user_promotes_allowlisted_existing_user(tmp_path) -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite://{tmp_path}/test.db",
+        admin_emails=frozenset({"owner@example.com"}),
+    )
+    service = EmailService(settings)
+    service.send = AsyncMock()
+
+    with TestClient(create_app(settings)) as client:
+
+        async def scenario() -> None:
+            user = await User.create(email="next@example.com", name="Next", role="user")
+            result = await invite_user(
+                user.email,
+                user.name,
+                "admin-access",
+                service,
+                "https://trolley.example.com/onboarding.md",
+                admin_emails=frozenset({"owner@example.com", "next@example.com"}),
+            )
+            await user.refresh_from_db()
+            assert result["user"]["role"] == "admin"
+            assert user.role == "admin"
+
+        client.portal.call(scenario)
+
+
 def test_invite_user_disables_key_when_email_fails(tmp_path) -> None:
     settings = Settings(
         _env_file=None,

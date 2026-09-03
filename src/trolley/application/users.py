@@ -31,13 +31,21 @@ async def invite_user(
     key_name: str,
     email_service: EmailService,
     onboarding_url: str,
+    *,
+    admin_emails: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     email = normalize_email(email)
+    role = UserRole.ADMIN if email in admin_emails else UserRole.USER
     user = await User.get_or_none(email=email)
     if user is None:
-        user = await User.create(email=email, name=name.strip(), role=UserRole.USER)
-    elif user.role != UserRole.USER or not user.is_active:
-        raise ValueError("Only an active non-admin user can be invited")
+        user = await User.create(email=email, name=name.strip(), role=role)
+    elif not user.is_active:
+        raise ValueError("Only an active user can be invited")
+    elif user.role == UserRole.ADMIN and role != UserRole.ADMIN:
+        raise PermissionError("Admin email is not in TROLLEY_ADMIN_EMAILS")
+    elif user.role != role:
+        user.role = role
+        await user.save()
 
     key, secret = await create_api_key(user, key_name.strip())
     try:

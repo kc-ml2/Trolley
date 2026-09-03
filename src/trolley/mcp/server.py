@@ -128,10 +128,20 @@ def create_mcp_server(
 
     @server.system_tool(
         SystemToolName.INVITE_USER,
-        description="Create a user and email a one-time Trolley API key (admin)",
+        description=(
+            "Create or reuse a user and email a one-time Trolley API key (admin). "
+            "Emails in TROLLEY_ADMIN_EMAILS receive the admin role."
+        ),
     )
     async def invite_user(email: str, name: str, key_name: str = "initial-access") -> dict:
-        return await users.invite_user(email, name, key_name, email_service, onboarding_url)
+        return await users.invite_user(
+            email,
+            name,
+            key_name,
+            email_service,
+            onboarding_url,
+            admin_emails=admin_emails,
+        )
 
     @server.system_tool(
         SystemToolName.UPDATE_USER_ACCESS,
