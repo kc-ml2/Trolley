@@ -6,7 +6,6 @@ from trolley.main import create_app
 
 def settings(tmp_path) -> Settings:
     return Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         public_base_url="https://trolley.example.com/root/",
         admin_emails=frozenset({"admin@example.com"}),

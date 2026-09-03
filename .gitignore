@@ -10,11 +10,10 @@ htmlcov/
 # Environments
 .venv/
 venv/
-.env
 
-# Local data
+# Local configuration and data
+trolley.yaml
 *.db
-targets.yaml
 *.sqlite
 *.sqlite3
 

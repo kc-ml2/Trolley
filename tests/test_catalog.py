@@ -10,7 +10,6 @@ from trolley.persistence.models import Target
 
 def test_target_and_operation_catalog(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"root@example.com"}),
     )

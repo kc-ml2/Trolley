@@ -8,7 +8,6 @@ from trolley.persistence.database import tortoise_config
 
 def test_cli_issues_key_only_for_allowlisted_admin(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
     )

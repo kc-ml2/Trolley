@@ -8,7 +8,7 @@ from trolley.mcp.server import create_mcp_server
 
 
 def test_mcp_has_small_tool_surface() -> None:
-    server = create_mcp_server(settings=Settings(_env_file=None))
+    server = create_mcp_server(settings=Settings())
 
     async def names() -> set[str]:
         return {tool.name for tool in await server.list_tools()}

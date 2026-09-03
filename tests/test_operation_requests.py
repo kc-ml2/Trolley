@@ -14,7 +14,6 @@ from trolley.persistence.models import Target, User
 
 def test_user_requests_operation_and_admin_resolves_it(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
     )
@@ -72,7 +71,6 @@ def test_user_requests_operation_and_admin_resolves_it(tmp_path) -> None:
 
 def test_fulfilled_request_requires_an_active_operation(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
     )

@@ -1,0 +1,26 @@
+server:
+  public_base_url: http://localhost:8000
+
+catalog:
+  database_url: sqlite://./trolley.db
+
+admins:
+  emails:
+    - admin@example.com
+
+# Optional Google Workspace SMTP settings for invite_user.
+# Remove or leave this section commented out to disable email delivery.
+# smtp:
+#   host: smtp.gmail.com
+#   port: 587
+#   security: starttls
+#   username: trolley@example.com
+#   password: google-app-password
+#   from: Trolley <trolley@example.com>
+#   timeout: 10
+
+targets:
+  payments-db:
+    kind: postgresql
+    url: postgresql://user:password@127.0.0.1:5432/payments
+    timeout: 10

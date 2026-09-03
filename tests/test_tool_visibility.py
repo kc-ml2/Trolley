@@ -14,7 +14,6 @@ from trolley.persistence.models import Target, User
 
 def test_dynamic_tool_list_respects_user_grants(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"root@example.com"}),
     )

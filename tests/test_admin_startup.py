@@ -8,7 +8,6 @@ from trolley.persistence.models import ApiKey, User
 
 def test_startup_creates_allowlisted_admin_users_without_keys(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com", "ops@example.com"}),
     )

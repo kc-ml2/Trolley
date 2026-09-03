@@ -15,7 +15,7 @@ from trolley.targets import configure_targets
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = validate_runtime_settings(settings or get_settings())
-    configure_targets(app_settings.targets_file)
+    configure_targets(app_settings.targets)
     mcp_app = create_mcp_app(
         app_settings.public_base_url,
         app_settings.admin_emails,

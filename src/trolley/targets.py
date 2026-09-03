@@ -1,12 +1,9 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
-
-import yaml
 
 from trolley.domain.targets import TargetKind
 
-_configured_path: str | Path = "targets.yaml"
+_configured_targets: dict[str, dict[str, Any]] = {}
 
 
 @dataclass(frozen=True)
@@ -16,28 +13,21 @@ class TargetDefinition:
     configuration: dict[str, Any]
 
 
-def configure_targets(path: str | Path) -> None:
-    global _configured_path
-    _configured_path = path
+def configure_targets(targets: dict[str, dict[str, Any]]) -> None:
+    global _configured_targets
+    _configured_targets = targets
 
 
 def get_targets() -> dict[str, TargetDefinition]:
-    return load_targets(_configured_path)
+    return load_targets(_configured_targets)
 
 
-def load_targets(path: str | Path) -> dict[str, TargetDefinition]:
-    target_path = Path(path)
-    if not target_path.exists():
-        return {}
-    if target_path.stat().st_mode & 0o077:
-        raise ValueError("targets file must not be accessible by group or others")
-
-    document = yaml.safe_load(target_path.read_text()) or {}
-    if not isinstance(document, dict) or not isinstance(document.get("targets", {}), dict):
-        raise ValueError("targets file must contain a 'targets' mapping")
+def load_targets(targets: dict[str, dict[str, Any]]) -> dict[str, TargetDefinition]:
+    if not isinstance(targets, dict):
+        raise ValueError("targets must be a mapping")
 
     definitions = {}
-    for name, value in document.get("targets", {}).items():
+    for name, value in targets.items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("target names must be non-empty strings")
         if not isinstance(value, dict):

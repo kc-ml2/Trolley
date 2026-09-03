@@ -22,7 +22,6 @@ def initialize_payload() -> dict:
 def test_mcp_http_requires_valid_bearer_token(tmp_path) -> None:
     secret = "sk-trolley-test-admin"
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
     )

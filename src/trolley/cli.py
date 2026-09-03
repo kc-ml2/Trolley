@@ -8,7 +8,7 @@ from trolley.application import targets
 from trolley.application.admins import ensure_admin_users
 from trolley.auth.api_keys import create_api_key
 from trolley.auth.roles import normalize_email
-from trolley.config import ConfigurationError, Settings, validate_runtime_settings
+from trolley.config import ConfigurationError, Settings, get_settings, validate_runtime_settings
 from trolley.domain.users import UserRole
 from trolley.persistence.database import tortoise_config
 from trolley.persistence.models import User
@@ -37,7 +37,7 @@ async def issue_admin_key(settings: Settings, email: str, name: str) -> str:
     validate_runtime_settings(settings)
     email = normalize_email(email)
     if email not in settings.admin_emails:
-        raise PermissionError("Email is not in TROLLEY_ADMIN_EMAILS")
+        raise PermissionError("Email is not in admins.emails")
 
     await Tortoise.init(config=tortoise_config(settings))
     try:
@@ -60,7 +60,7 @@ def main() -> None:
     command_parser = parser()
     args = command_parser.parse_args()
     try:
-        settings = validate_runtime_settings(Settings())
+        settings = validate_runtime_settings(get_settings())
     except ConfigurationError as error:
         command_parser.error(str(error))
 

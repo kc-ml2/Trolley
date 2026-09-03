@@ -9,29 +9,23 @@ from trolley.connectors import database
 from trolley.targets import load_targets
 
 
-def write_targets(tmp_path) -> str:
-    path = tmp_path / "targets.yaml"
-    path.write_text(
-        """
-targets:
-  replica:
-    kind: postgresql
-    url: postgresql://reader:secret@127.0.0.1:5433/litellm
-    timeout: 3
-""".lstrip()
-    )
-    path.chmod(0o600)
-    return str(path)
+def configured_targets() -> dict:
+    return {
+        "replica": {
+            "kind": "postgresql",
+            "url": "postgresql://reader:secret@127.0.0.1:5433/litellm",
+            "timeout": 3,
+        }
+    }
 
 
-def test_loads_targets_from_yaml_without_exposing_configuration(tmp_path) -> None:
+def test_loads_targets_without_exposing_configuration() -> None:
     settings = Settings(
-        _env_file=None,
-        targets_file=write_targets(tmp_path),
+        targets=configured_targets(),
         admin_emails=frozenset({"root@example.com"}),
     )
 
-    definitions = load_targets(settings.targets_file)
+    definitions = load_targets(settings.targets)
     assert definitions["replica"].configuration["timeout"] == 3
     assert asyncio.run(targets.list_targets(settings)) == [
         {"name": "replica", "kind": "postgresql"}
@@ -39,28 +33,14 @@ def test_loads_targets_from_yaml_without_exposing_configuration(tmp_path) -> Non
     assert "secret" not in str(asyncio.run(targets.list_targets(settings)))
 
 
-def test_rejects_postgresql_target_without_url(tmp_path) -> None:
-    path = tmp_path / "targets.yaml"
-    path.write_text("targets:\n  broken:\n    kind: postgresql\n")
-    path.chmod(0o600)
+def test_rejects_postgresql_target_without_url() -> None:
     with pytest.raises(ValueError, match="needs 'url'"):
-        load_targets(path)
+        load_targets({"broken": {"kind": "postgresql"}})
 
 
-def test_rejects_non_postgresql_target(tmp_path) -> None:
-    path = tmp_path / "targets.yaml"
-    path.write_text("targets:\n  api:\n    kind: http\n    base_url: https://example.com\n")
-    path.chmod(0o600)
+def test_rejects_non_postgresql_target() -> None:
     with pytest.raises(ValueError, match="unsupported target kind"):
-        load_targets(path)
-
-
-def test_rejects_targets_file_with_open_permissions(tmp_path) -> None:
-    path = tmp_path / "targets.yaml"
-    path.write_text("targets: {}\n")
-    path.chmod(0o644)
-    with pytest.raises(ValueError, match="group or others"):
-        load_targets(path)
+        load_targets({"api": {"kind": "http", "base_url": "https://example.com"}})
 
 
 def test_database_connection_reports_postgresql_version(monkeypatch) -> None:

@@ -1,5 +1,0 @@
-targets:
-  payments-db:
-    kind: postgresql
-    url: postgresql://user:password@127.0.0.1:5432/payments
-    timeout: 10

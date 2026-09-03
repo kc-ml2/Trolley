@@ -12,7 +12,6 @@ from trolley.persistence.models import ApiKey, User
 
 def test_invite_user_emails_key_without_returning_secret(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
         email_from="trolley@example.com",
@@ -56,7 +55,6 @@ def test_invite_user_emails_key_without_returning_secret(tmp_path) -> None:
 
 def test_invite_user_emails_key_to_allowlisted_admin(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"owner@example.com", "admin2@example.com"}),
     )
@@ -85,7 +83,6 @@ def test_invite_user_emails_key_to_allowlisted_admin(tmp_path) -> None:
 
 def test_invite_user_promotes_allowlisted_existing_user(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"owner@example.com"}),
     )
@@ -113,7 +110,6 @@ def test_invite_user_promotes_allowlisted_existing_user(tmp_path) -> None:
 
 def test_invite_user_disables_key_when_email_fails(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"admin@example.com"}),
     )

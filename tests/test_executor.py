@@ -12,15 +12,9 @@ from trolley.persistence.models import Execution, User
 
 
 def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None:
-    targets_file = tmp_path / "targets.yaml"
-    targets_file.write_text(
-        "targets:\n  customers:\n    kind: postgresql\n    url: postgresql://example/test\n"
-    )
-    targets_file.chmod(0o600)
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
-        targets_file=str(targets_file),
+        targets={"customers": {"kind": "postgresql", "url": "postgresql://example/test"}},
         admin_emails=frozenset({"root@example.com"}),
     )
     connector = AsyncMock(return_value={"rows": [{"id": 42}]})

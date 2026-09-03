@@ -13,7 +13,6 @@ from trolley.persistence.models import Target, User
 
 def test_operation_access_matrix_and_inactive_target(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"root@example.com"}),
     )

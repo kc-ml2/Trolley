@@ -7,7 +7,7 @@ from trolley.targets import TargetDefinition, load_targets
 
 
 def configured_targets(settings: Settings) -> dict[str, TargetDefinition]:
-    return load_targets(settings.targets_file)
+    return load_targets(settings.targets)
 
 
 async def sync_targets(settings: Settings) -> None:

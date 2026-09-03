@@ -9,7 +9,6 @@ from trolley.persistence.models import Target
 
 def test_rejects_reserved_names_and_parameter_mismatch(tmp_path) -> None:
     settings = Settings(
-        _env_file=None,
         database_url=f"sqlite://{tmp_path}/test.db",
         admin_emails=frozenset({"root@example.com"}),
     )

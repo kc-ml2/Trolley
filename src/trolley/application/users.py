@@ -42,7 +42,7 @@ async def invite_user(
     elif not user.is_active:
         raise ValueError("Only an active user can be invited")
     elif user.role == UserRole.ADMIN and role != UserRole.ADMIN:
-        raise PermissionError("Admin email is not in TROLLEY_ADMIN_EMAILS")
+        raise PermissionError("Admin email is not in admins.emails")
     elif user.role != role:
         user.role = role
         await user.save()

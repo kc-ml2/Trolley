@@ -28,7 +28,7 @@ Trolley helps teams turn internal database work into safe Tools for agents. User
 
 | Role | What they do |
 |---|---|
-| Server operator | Installs Trolley, edits `targets.yaml`, protects credentials, and runs local connection checks |
+| Server operator | Installs Trolley, edits `trolley.yaml`, protects credentials, and runs local connection checks |
 | MCP administrator | Reviews Target schemas and creates, updates, disables, and shares Operations through MCP |
 | MCP user or agent | Finds and runs only the Tools allowed for its Trolley account |
 
@@ -36,7 +36,7 @@ This keeps access simple and safe: MCP administrators can build useful database 
 
 ## Core concepts
 
-- **Target**: a PostgreSQL database configured by the server operator in `targets.yaml`.
+- **Target**: a PostgreSQL database configured by the server operator in `trolley.yaml`.
 - **Operation**: an approved SQL statement stored in Trolley and exposed as a dynamic MCP Tool.
 - **User**: a human or agent identity authenticated with a Trolley Bearer API key.
 - **Execution**: an audited Operation invocation, including its caller, arguments, result, status, and timestamps.
@@ -53,50 +53,48 @@ Python 3.11 or newer is required.
 python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-cp .env.example .env
-cp targets.example.yaml targets.yaml
-chmod 600 targets.yaml
 ```
 
-### 2. Configure the Trolley server
+### 2. Configure Trolley
 
-Configure Trolley itself in `.env`:
+Copy the example and edit `trolley.yaml`:
 
-```dotenv
-TROLLEY_DATABASE_URL=sqlite://./trolley.db
-TROLLEY_PUBLIC_BASE_URL=http://localhost:8000
-TROLLEY_ADMIN_EMAILS=admin@example.com
-TROLLEY_TARGETS_FILE=./targets.yaml
+```bash
+cp trolley.example.yaml trolley.yaml
 ```
-
-`TROLLEY_ADMIN_EMAILS` is the allowlist of identities that may receive MCP administrator privileges. It is required even for a local installation.
-
-### 3. Register infrastructure Targets
-
-The server operator—not an MCP client—configures Target connections in `targets.yaml`:
 
 ```yaml
+server:
+  public_base_url: http://localhost:8000
+
+catalog:
+  database_url: sqlite://./trolley.db
+
+admins:
+  emails:
+    - admin@example.com
+
 targets:
-  litellm-db-replica:
+  payments-db:
     kind: postgresql
-    url: postgresql://user:password@127.0.0.1:5433/litellm
+    url: postgresql://user:password@127.0.0.1:5432/payments
     timeout: 10
 ```
 
-`targets.yaml` contains real credentials. Keep it readable only by the Trolley service account and do not commit it to Git:
+The `admins.emails` list is required. Target connection details also live in this file, so do not commit `trolley.yaml` to Git.
+
+You can keep the file elsewhere by setting its path:
 
 ```bash
-chmod 600 targets.yaml
+TROLLEY_CONFIG_FILE=/etc/trolley/trolley.yaml trolley
 ```
 
-The repository ignores `.env`, `targets.yaml`, and `trolley.db` by default.
-
-Validate the configuration and test PostgreSQL connections locally:
+### 3. Check the PostgreSQL Target
 
 ```bash
 trolley target list
 trolley target check
-trolley target test litellm-db-replica
+trolley target test payments-db
 ```
 
 ### 4. Start the server
@@ -107,7 +105,7 @@ Start Trolley to initialize its catalog and serve MCP:
 trolley
 ```
 
-Trolley synchronizes Target names and kinds into its catalog, while credentials remain only in `targets.yaml`.
+Trolley synchronizes Target names and kinds into its catalog, while credentials remain only in `trolley.yaml`.
 
 ### 5. Issue an administrator key
 
@@ -307,10 +305,13 @@ Administrators review requests with `list_operation_requests`. After creating th
 
 ### Admin lock
 
-`TROLLEY_ADMIN_EMAILS` is the authoritative allowlist for administrator eligibility:
+`admins.emails` in `trolley.yaml` is the list of emails allowed to be administrators:
 
-```dotenv
-TROLLEY_ADMIN_EMAILS=admin@example.com,ops@example.com
+```yaml
+admins:
+  emails:
+    - admin@example.com
+    - ops@example.com
 ```
 
 Admin access requires both conditions:
@@ -318,7 +319,7 @@ Admin access requires both conditions:
 ```text
 stored User.role == admin
 AND
-normalized User.email is in TROLLEY_ADMIN_EMAILS
+normalized User.email is in `admins.emails`
 ```
 
 Consequences:
@@ -351,7 +352,7 @@ Then call `create_api_key`:
 
 The `secret` in the response is shown once. Configure it as that user's MCP Bearer token. API key secrets are stored only as SHA-256 hashes, so Trolley cannot display an existing secret later; issue a new key if one is lost.
 
-When SMTP is configured, an administrator can call `invite_user` instead. It creates or reuses an active user, makes an API key, and emails the key with the onboarding URL. An email in `TROLLEY_ADMIN_EMAILS` is invited as an admin; any other email is invited as a regular user. The key is not returned through MCP. If the email fails, Trolley disables the new key so the administrator can safely try again.
+When SMTP is configured, an administrator can call `invite_user` instead. It creates or reuses an active user, makes an API key, and emails the key with the onboarding URL. An email in `admins.emails` is invited as an admin; any other email is invited as a regular user. The key is not returned through MCP. If the email fails, Trolley disables the new key so the administrator can safely try again.
 
 The first admin still needs a local key from `trolley admin issue-key`. After connecting, that admin can use `invite_user` to email keys to other allowlisted admins.
 
@@ -420,12 +421,11 @@ A typical installation separates runtime state from safe configuration templates
 
 | Path | Purpose | Commit to Git? |
 |---|---|---|
-| `.env` | Trolley process configuration | No |
-| `targets.yaml` | PostgreSQL URLs and connection settings | No |
+| `trolley.yaml` | Trolley, SMTP, and PostgreSQL Target settings | No |
 | `trolley.db` | Users, hashed keys, dynamic Operations, grants, and Execution history | No |
-| `.env.example`, `targets.example.yaml` | Safe configuration templates | Yes |
+| `trolley.example.yaml` | Safe configuration template | Yes |
 
-Back up `targets.yaml` and `trolley.db` together when moving a Trolley installation. Protect both with operating-system permissions. A catalog backup without `targets.yaml` preserves Operation definitions but cannot connect them to infrastructure; a Target file without the catalog loses dynamic Tools and Trolley identities.
+Back up `trolley.yaml` and `trolley.db` together when moving a Trolley installation. A catalog backup without `trolley.yaml` preserves Operation definitions but cannot connect them to PostgreSQL; a configuration file without the catalog loses dynamic Tools and Trolley accounts.
 
 ## Security model
 
@@ -453,33 +453,40 @@ authenticated caller
 → Execution audit record
 ```
 
-For PostgreSQL, argument values are passed through asyncpg parameter binding rather than interpolated into SQL. The database account configured in `targets.yaml` remains the final authority: use a read-only account or a physical read replica when Operations should only query data.
+For PostgreSQL, argument values are passed through asyncpg parameter binding rather than interpolated into SQL. The database account configured in `trolley.yaml` remains the final authority: use a read-only account or a physical read replica when Operations should only query data.
 
 Target credentials remain in the server-owned Target YAML file. MCP Tool responses do not include connection strings or other Target configuration. Dynamic Operations cannot execute Python or shell code; they are limited to approved PostgreSQL statements.
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `TROLLEY_DATABASE_URL` | `sqlite://./trolley.db` | Trolley's catalog and execution-history database |
-| `TROLLEY_PUBLIC_BASE_URL` | `http://localhost:8000` | Public base URL used by MCP authentication metadata |
-| `TROLLEY_TARGETS_FILE` | `targets.yaml` | Server-owned YAML file containing Target configuration and credentials |
-| `TROLLEY_ADMIN_EMAILS` | **required** | Comma-separated admin eligibility allowlist; also used to create admin Users when no active allowlisted admin exists |
-| `TROLLEY_EMAIL_FROM` | — | Sender address used for invitations; required with `TROLLEY_SMTP_HOST` |
-| `TROLLEY_SMTP_HOST` | — | SMTP server hostname; omit it to disable email delivery |
-| `TROLLEY_SMTP_PORT` | `587` | SMTP server port |
-| `TROLLEY_SMTP_USERNAME` | — | Optional SMTP username; requires a password |
-| `TROLLEY_SMTP_PASSWORD` | — | Optional SMTP password, stored as a secret setting |
-| `TROLLEY_SMTP_SECURITY` | `starttls` | SMTP transport security: `plain`, `starttls`, or `tls` |
-| `TROLLEY_SMTP_TIMEOUT` | `10` | SMTP connection timeout in seconds |
+Trolley reads `trolley.yaml` from the current directory. Set `TROLLEY_CONFIG_FILE` to use a different path.
 
-When `TROLLEY_SMTP_HOST` is configured, startup performs an SMTP connection, TLS, authentication, and `NOOP` check without sending a message. A failed check prevents startup, ensuring `invite_user` is not exposed with unavailable email delivery. When the host is omitted, email is disabled and `/health` reports it as such.
+| Section | Purpose |
+|---|---|
+| `server.public_base_url` | Public URL used for MCP authentication metadata and onboarding links |
+| `catalog.database_url` | Trolley's catalog and execution-history database |
+| `admins.emails` | Required list of emails allowed to receive the admin role |
+| `targets` | PostgreSQL connections available to Trolley |
+| `smtp` | Optional email delivery settings for `invite_user` |
 
-`GET /onboarding.md` provides public, agent-readable connection instructions, and `GET /.well-known/trolley` exposes the MCP URL and authentication metadata as JSON. Neither endpoint issues, accepts, or stores API keys.
+For Google Workspace, add:
 
-Target configuration is changed by editing `TROLLEY_TARGETS_FILE` and restarting Trolley. Protect the file with operating-system permissions such as mode `0600`.
+```yaml
+smtp:
+  host: smtp.gmail.com
+  port: 587
+  security: starttls
+  username: trolley@example.com
+  password: google-app-password
+  from: Trolley <trolley@example.com>
+  timeout: 10
+```
 
-Both `trolley` and `trolley admin issue-key ...` fail before creating or opening the database when `TROLLEY_ADMIN_EMAILS` is missing. The CLI currently listens on `0.0.0.0:8000`; `TROLLEY_PUBLIC_BASE_URL` controls MCP authentication metadata, not the bind port.
+Use a Google App Password, not the account password. Omit the `smtp` section to disable email delivery. When SMTP is configured, startup checks the connection, TLS, authentication, and `NOOP` without sending a message. A failed check prevents startup.
+
+`GET /onboarding.md` provides public, agent-readable connection instructions, and `GET /.well-known/trolley` provides the MCP URL and authentication details as JSON. Neither endpoint issues, accepts, or stores API keys.
+
+Both `trolley` and `trolley admin issue-key ...` fail before creating or opening the database when `admins.emails` is empty. The CLI listens on `0.0.0.0:8000`; `server.public_base_url` controls public links, not the bind port.
 
 ## Development
 

@@ -1,9 +1,11 @@
+import os
 from enum import StrEnum
 from functools import lru_cache
-from typing import Annotated
+from pathlib import Path
+from typing import Any
 
-from pydantic import SecretStr, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from trolley.auth.roles import normalize_admin_emails
 
@@ -18,17 +20,13 @@ class SmtpSecurity(StrEnum):
     TLS = "tls"
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="TROLLEY_",
-        extra="ignore",
-    )
+class Settings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
 
     database_url: str = "sqlite://./trolley.db"
     public_base_url: str = "http://localhost:8000"
-    targets_file: str = "targets.yaml"
-    admin_emails: Annotated[frozenset[str], NoDecode] = frozenset()
+    admin_emails: frozenset[str] = frozenset()
+    targets: dict[str, dict[str, Any]] = Field(default_factory=dict)
     email_from: str | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
@@ -47,22 +45,60 @@ class Settings(BaseSettings):
         return normalize_admin_emails(value)
 
 
+def load_settings(path: str | Path | None = None) -> Settings:
+    config_path = Path(path or os.getenv("TROLLEY_CONFIG_FILE", "trolley.yaml"))
+    if not config_path.exists():
+        raise ConfigurationError(f"Configuration file not found: {config_path}")
+
+    document = yaml.safe_load(config_path.read_text()) or {}
+    if not isinstance(document, dict):
+        raise ConfigurationError("Trolley configuration must be a YAML mapping")
+
+    server = _mapping(document, "server")
+    catalog = _mapping(document, "catalog")
+    admins = _mapping(document, "admins")
+    smtp = _mapping(document, "smtp")
+    targets = document.get("targets", {})
+    if not isinstance(targets, dict):
+        raise ConfigurationError("targets must be a YAML mapping")
+
+    try:
+        return Settings(
+            public_base_url=server.get("public_base_url", "http://localhost:8000"),
+            database_url=catalog.get("database_url", "sqlite://./trolley.db"),
+            admin_emails=admins.get("emails", []),
+            targets=targets,
+            email_from=smtp.get("from"),
+            smtp_host=smtp.get("host"),
+            smtp_port=smtp.get("port", 587),
+            smtp_username=smtp.get("username"),
+            smtp_password=smtp.get("password"),
+            smtp_security=smtp.get("security", SmtpSecurity.STARTTLS),
+            smtp_timeout=smtp.get("timeout", 10),
+        )
+    except ValueError as error:
+        raise ConfigurationError(f"Invalid Trolley configuration: {error}") from error
+
+
+def _mapping(document: dict[str, Any], name: str) -> dict[str, Any]:
+    value = document.get(name, {})
+    if not isinstance(value, dict):
+        raise ConfigurationError(f"{name} must be a YAML mapping")
+    return value
+
+
 def validate_runtime_settings(settings: Settings) -> Settings:
     if not settings.admin_emails:
-        raise ConfigurationError(
-            "TROLLEY_ADMIN_EMAILS must contain at least one administrator email"
-        )
+        raise ConfigurationError("admins.emails must contain at least one administrator email")
     if settings.smtp_host and not settings.email_from:
-        raise ConfigurationError("TROLLEY_EMAIL_FROM is required when SMTP is configured")
+        raise ConfigurationError("smtp.from is required when SMTP is configured")
     if settings.email_from and not settings.smtp_host:
-        raise ConfigurationError("TROLLEY_SMTP_HOST is required when email is configured")
+        raise ConfigurationError("smtp.host is required when email is configured")
     if bool(settings.smtp_username) != bool(settings.smtp_password):
-        raise ConfigurationError(
-            "TROLLEY_SMTP_USERNAME and TROLLEY_SMTP_PASSWORD must be configured together"
-        )
+        raise ConfigurationError("smtp.username and smtp.password must be configured together")
     return settings
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return load_settings()
