@@ -38,6 +38,37 @@ def test_rejects_postgresql_target_without_url() -> None:
         load_targets({"broken": {"kind": "postgresql"}})
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("query_timeout", float("nan")),
+        ("query_timeout", float("inf")),
+        ("timeout", "nan"),
+        ("timeout", "inf"),
+        ("max_rows", 1.9),
+        ("max_rows", float("inf")),
+        ("max_rows", "1.9"),
+        ("max_result_bytes", float("nan")),
+        ("max_rows", 2**63),
+        ("max_result_bytes", True),
+    ],
+)
+def test_rejects_non_finite_and_fractional_limits(field, value):
+    with pytest.raises(ValueError, match=field):
+        load_targets({"db": {"kind": "postgresql", "url": "postgresql://db", field: value}})
+
+
+def test_rejects_invalid_operation_limits() -> None:
+    for field, value in (
+        ("timeout", 0),
+        ("query_timeout", -1),
+        ("max_rows", "many"),
+        ("max_result_bytes", False),
+    ):
+        with pytest.raises(ValueError, match=field):
+            load_targets({"broken": {"kind": "postgresql", "url": "postgresql://db", field: value}})
+
+
 def test_rejects_non_postgresql_target() -> None:
     with pytest.raises(ValueError, match="unsupported target kind"):
         load_targets({"api": {"kind": "http", "base_url": "https://example.com"}})

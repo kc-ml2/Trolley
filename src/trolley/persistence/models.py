@@ -51,7 +51,7 @@ class Operation(models.Model):
     )
     name = fields.CharField(max_length=255, unique=True)
     description = fields.TextField(default="")
-    access = fields.CharEnumField(OperationAccess, default=OperationAccess.USER)
+    access = fields.CharEnumField(OperationAccess, default=OperationAccess.PUBLIC)
     input_schema = fields.JSONField(default=dict)
     definition = fields.JSONField(default=dict)
     is_active = fields.BooleanField(default=True)
@@ -75,6 +75,37 @@ class OperationGrant(models.Model):
         unique_together = (("user", "operation"),)
 
 
+class Group(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    name = fields.CharField(max_length=255, unique=True)
+    description = fields.TextField(default="")
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+
+class GroupMembership(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    group = fields.ForeignKeyField(
+        "models.Group", related_name="memberships", on_delete=fields.CASCADE
+    )
+    user = fields.ForeignKeyField(
+        "models.User", related_name="memberships", on_delete=fields.CASCADE
+    )
+
+    class Meta:
+        unique_together = (("group", "user"),)
+
+
+class GroupOperationGrant(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    group = fields.ForeignKeyField("models.Group", related_name="grants", on_delete=fields.CASCADE)
+    operation = fields.ForeignKeyField(
+        "models.Operation", related_name="group_grants", on_delete=fields.CASCADE
+    )
+
+    class Meta:
+        unique_together = (("group", "operation"),)
+
+
 class OperationRequest(models.Model):
     id = fields.UUIDField(primary_key=True)
     requested_by: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
@@ -90,6 +121,31 @@ class OperationRequest(models.Model):
     admin_note = fields.TextField(default="")
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
+
+
+class PageCursor(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    operation = fields.ForeignKeyField(
+        "models.Operation", related_name="page_cursors", on_delete=fields.CASCADE
+    )
+    user_id = fields.UUIDField()
+    fingerprint = fields.CharField(max_length=64)
+    offset = fields.BigIntField()
+    page_size = fields.BigIntField()
+    expires_at = fields.DatetimeField(db_index=True)
+
+
+class ExecutionPage(models.Model):
+    """Pagination context kept separately to preserve existing Execution schemas."""
+
+    id = fields.UUIDField(primary_key=True)
+    execution = fields.OneToOneField(
+        "models.Execution", related_name="page", on_delete=fields.CASCADE
+    )
+    offset = fields.BigIntField()
+    page_size = fields.BigIntField()
+    input_cursor = fields.UUIDField(null=True)
+    query_fingerprint = fields.CharField(max_length=64)
 
 
 class Execution(models.Model):

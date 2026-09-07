@@ -1,7 +1,13 @@
+import asyncio
+import json
 from time import perf_counter
 from typing import Any
 
 import asyncpg
+
+from trolley.connectors.limits import execution_limits
+from trolley.connectors.sql import pagination_query
+from trolley.serialization import json_value
 
 
 def database_url(configuration: dict) -> str:
@@ -141,6 +147,9 @@ async def execute(
     configuration: dict,
     definition: dict,
     arguments: dict,
+    *,
+    page_size: int | None = None,
+    offset: int = 0,
 ) -> Any:
     sql = definition.get("sql")
     if not sql:
@@ -154,14 +163,55 @@ async def execute(
         raise ValueError(f"Arguments do not match parameters; {details}")
     values = [arguments[name] for name in parameter_names]
 
-    connection = await asyncpg.connect(
-        database_url(configuration), timeout=configuration.get("timeout", 30)
-    )
+    limits = execution_limits(configuration)
+    query_timeout = limits["query_timeout"]
+    max_rows = limits["max_rows"]
+    max_result_bytes = limits["max_result_bytes"]
+    paginated = definition.get("pagination") is not None
+    if paginated:
+        if page_size is None or not 1 <= page_size <= max_rows or offset < 0:
+            raise ValueError("Invalid internal pagination bounds")
+        columns = definition["pagination"]["order_by"]
+        order = ", ".join('"' + column.replace('"', '""') + '" ASC' for column in columns)
+        count = len(values)
+        sql = (
+            f"SELECT * FROM (\n{pagination_query(sql)}\n) AS trolley_page "
+            f"ORDER BY {order} LIMIT ${count + 1}::bigint OFFSET ${count + 2}::bigint"
+        )
+        values.extend([page_size + 1, offset])
+    connection = await asyncpg.connect(database_url(configuration), timeout=limits["timeout"])
     try:
-        if definition.get("fetch", True):
-            rows = await connection.fetch(sql, *values)
-            return {"rows": [dict(row) for row in rows]}
-        status = await connection.execute(sql, *values)
-        return {"status": status}
+        async with asyncio.timeout(query_timeout):
+            async with connection.transaction(readonly=paginated):
+                if definition.get("fetch", True):
+                    rows = []
+                    # Reserve room for envelope fields and an opaque continuation token.
+                    size = len(b'{"rows":[]}') + 256
+                    has_more = False
+                    async for record in connection.cursor(sql, *values, prefetch=1):
+                        if paginated and len(rows) >= page_size:
+                            has_more = True
+                            break
+                        if len(rows) >= max_rows:
+                            raise ValueError(
+                                "Result row limit exceeded; narrow the query or paginate"
+                            )
+                        row = json_value(dict(record))
+                        size += len(json.dumps(row, ensure_ascii=False).encode("utf-8")) + 2
+                        if size > max_result_bytes:
+                            if paginated and rows:
+                                has_more = True
+                                break
+                            raise ValueError(
+                                "Result byte limit exceeded; narrow the query or paginate"
+                            )
+                        rows.append(row)
+                    return {"rows": rows, "has_more": has_more, "next_cursor": None}
+                status = await connection.execute(sql, *values)
+                return {"status": status}
+    except TimeoutError as error:
+        raise ValueError(
+            "Query timed out; database outcome may be unknown. Do not blindly retry writes."
+        ) from error
     finally:
         await connection.close()

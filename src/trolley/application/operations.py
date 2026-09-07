@@ -31,7 +31,7 @@ async def create_operation(
     target_name: str,
     definition: dict[str, Any],
     description: str = "",
-    access: OperationAccess = OperationAccess.USER,
+    access: OperationAccess = OperationAccess.PUBLIC,
     input_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     target = await Target.get(name=target_name)

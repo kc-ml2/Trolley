@@ -16,6 +16,15 @@ def test_mcp_has_small_tool_surface() -> None:
     assert isinstance(server.registry, DynamicToolRegistry)
     assert server.registry.server is server
     assert asyncio.run(names()) == {
+        "create_group",
+        "list_groups",
+        "update_group",
+        "delete_group",
+        "set_user_groups",
+        "list_group_memberships",
+        "grant_group_operation",
+        "revoke_group_operation",
+        "list_group_operation_grants",
         "list_users",
         "create_user",
         "invite_user",
@@ -45,6 +54,8 @@ def test_server_instructs_agents_to_discover_operations() -> None:
 
     assert "Call list_operations after connecting" in server._lowlevel_server.instructions
     assert "Use execute" in server._lowlevel_server.instructions
+    assert "has_more" in server._lowlevel_server.instructions
+    assert "not a database snapshot" in server._lowlevel_server.instructions
 
 
 def test_system_tool_decorator_hides_injected_context_and_enforces_auth() -> None:
@@ -52,11 +63,13 @@ def test_system_tool_decorator_hides_injected_context_and_enforces_auth() -> Non
 
     async def schema() -> dict:
         tools = {tool.name: tool for tool in await server.list_tools()}
-        assert "auth_context" not in tools["execute"].input_schema["properties"]
+        execute_properties = tools["execute"].input_schema["properties"]
+        assert "auth_context" not in execute_properties
+        assert {"name", "arguments", "page_size", "cursor"} == set(execute_properties)
         return tools["create_user"].input_schema
 
     create_user_schema = asyncio.run(schema())
-    assert set(create_user_schema["properties"]) == {"email", "name", "role"}
+    assert set(create_user_schema["properties"]) == {"email", "name", "role", "group_names"}
 
     with pytest.raises(Exception, match="Authentication required"):
         asyncio.run(server.call_tool("list_users", {}))

@@ -4,7 +4,8 @@ from enum import StrEnum
 class OperationAccess(StrEnum):
     ADMIN = "admin"
     RESTRICTED = "restricted"
-    USER = "user"
+    PUBLIC = "public"
+    USER = "user"  # Legacy public access; retained for existing catalogs and clients.
 
 
 class ExecutionStatus(StrEnum):

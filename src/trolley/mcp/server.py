@@ -9,7 +9,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
-from trolley.application import grants, operation_requests, operations, targets, users
+from trolley.application import grants, groups, operation_requests, operations, targets, users
 from trolley.application.access import accessible_operation_names
 from trolley.application.execution import execute_operation
 from trolley.auth.context import AuthContext
@@ -106,7 +106,13 @@ def create_mcp_server(
             "for confirmation before recording it with request_operation. Never include "
             "credentials or sensitive data in a request. Dynamic operation tools are "
             "conveniences; prefer list_operations and execute when the cached tool list "
-            "may be stale."
+            "may be stale. Query results contain rows, has_more and next_cursor. "
+            "For paginated operations, continue with execute using the unchanged cursor, "
+            "operation name, arguments and page_size. Cursors expire after 15 minutes "
+            "from the first page. has_more means the result is incomplete: never claim "
+            "to have fetched all rows until false. Fetch only the user's requested scope. "
+            "Pages are not a database snapshot; concurrent changes can cause duplicates "
+            "or omissions. Do not paginate writes."
         ),
         version="0.1.0",
         token_verifier=TrolleyTokenVerifier(admin_emails),
@@ -118,13 +124,53 @@ def create_mcp_server(
     )
     server.email_service = email_service
 
+    server.system_tool(SystemToolName.CREATE_GROUP, description="Create a group (admin)")(
+        groups.create_group
+    )
+    server.system_tool(SystemToolName.LIST_GROUPS, description="List groups (admin)")(
+        groups.list_groups
+    )
+    server.system_tool(SystemToolName.UPDATE_GROUP, description="Update group description (admin)")(
+        groups.update_group
+    )
+    server.system_tool(
+        SystemToolName.DELETE_GROUP,
+        description="Delete group and its memberships and grants (admin)",
+    )(groups.delete_group)
+    server.system_tool(
+        SystemToolName.SET_USER_GROUPS,
+        description="Replace all user group memberships; empty list removes all (admin)",
+    )(groups.set_user_groups)
+    server.system_tool(
+        SystemToolName.LIST_GROUP_MEMBERSHIPS, description="List group memberships (admin)"
+    )(groups.list_group_memberships)
+    server.system_tool(
+        SystemToolName.GRANT_GROUP_OPERATION,
+        description="Grant a non-admin operation to a group (admin)",
+    )(groups.grant_group_operation)
+    server.system_tool(
+        SystemToolName.REVOKE_GROUP_OPERATION,
+        description="Revoke a group's operation grant (admin)",
+    )(groups.revoke_group_operation)
+    server.system_tool(
+        SystemToolName.LIST_GROUP_OPERATION_GRANTS,
+        description="List group operation grants (admin)",
+    )(groups.list_group_operation_grants)
+
     @server.system_tool(SystemToolName.LIST_USERS, description="List users (admin)")
     async def list_users() -> list[dict]:
         return await users.list_users()
 
     @server.system_tool(SystemToolName.CREATE_USER, description="Create a user (admin)")
-    async def create_user(email: str, name: str, role: UserRole = UserRole.USER) -> dict:
-        return await users.create_user(email, name, role, admin_emails=admin_emails)
+    async def create_user(
+        email: str,
+        name: str,
+        role: UserRole = UserRole.USER,
+        group_names: list[str] | None = None,
+    ) -> dict:
+        return await users.create_user(
+            email, name, role, admin_emails=admin_emails, group_names=group_names
+        )
 
     @server.system_tool(
         SystemToolName.INVITE_USER,
@@ -133,7 +179,12 @@ def create_mcp_server(
             "Emails in admins.emails receive the admin role."
         ),
     )
-    async def invite_user(email: str, name: str, key_name: str = "initial-access") -> dict:
+    async def invite_user(
+        email: str,
+        name: str,
+        key_name: str = "initial-access",
+        group_names: list[str] | None = None,
+    ) -> dict:
         return await users.invite_user(
             email,
             name,
@@ -141,6 +192,7 @@ def create_mcp_server(
             email_service,
             onboarding_url,
             admin_emails=admin_emails,
+            group_names=group_names,
         )
 
     @server.system_tool(
@@ -244,7 +296,7 @@ def create_mcp_server(
         target_name: str,
         definition: dict,
         description: str = "",
-        access: OperationAccess = OperationAccess.USER,
+        access: OperationAccess = OperationAccess.PUBLIC,
         input_schema: dict | None = None,
     ) -> dict:
         result = await operations.create_operation(
@@ -318,16 +370,23 @@ def create_mcp_server(
         SystemToolName.EXECUTE,
         description=(
             "Execute an available operation by name. Use list_operations to discover "
-            "the operation and construct arguments matching its input_schema."
+            "the operation and construct arguments matching its input_schema. "
+            "If pagination is enabled, use page_size for the first page and pass "
+            "next_cursor as cursor to continue, keeping arguments and page_size unchanged. "
+            "has_more indicates partial results; pages are not a snapshot."
         ),
     )
     async def execute(
         name: str,
         arguments: dict | None = None,
+        page_size: int | None = None,
+        cursor: str | None = None,
         *,
         auth_context: AuthContext,
     ) -> dict:
-        return await execute_operation(name, arguments, auth_context)
+        return await execute_operation(
+            name, arguments, auth_context, page_size=page_size, cursor=cursor
+        )
 
     return server
 

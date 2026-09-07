@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from trolley.connectors.limits import execution_limits
 from trolley.domain.targets import TargetKind
 
 _configured_targets: dict[str, dict[str, Any]] = {}
@@ -39,5 +40,6 @@ def load_targets(targets: dict[str, dict[str, Any]]) -> dict[str, TargetDefiniti
         configuration = {key: item for key, item in value.items() if key != "kind"}
         if not configuration.get("url"):
             raise ValueError(f"PostgreSQL target needs 'url': {name}")
+        configuration.update(execution_limits(configuration))
         definitions[name] = TargetDefinition(name, kind, configuration)
     return definitions

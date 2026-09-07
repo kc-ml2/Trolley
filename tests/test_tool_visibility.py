@@ -1,8 +1,10 @@
+import pytest
 from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.mcpserver.exceptions import ToolError
 
-from trolley.application import grants, operations, users
+from trolley.application import grants, groups, operations, users
 from trolley.auth.api_keys import create_api_key
 from trolley.config import Settings
 from trolley.domain.operations import OperationAccess
@@ -48,5 +50,21 @@ def test_dynamic_tool_list_respects_user_grants(tmp_path) -> None:
             assert "public_report" not in names
             assert "create_target" not in names
             assert "list_operations" in names
+            assert "create_group" not in names
+            assert "grant_group_operation" not in names
+
+            await grants.revoke_operation(user.email, "private_report")
+            await groups.create_group("finance")
+            await groups.grant_group_operation("finance", "private_report")
+            await groups.set_user_groups(user.email, ["finance"])
+            context_token = auth_context_var.set(AuthenticatedUser(token))
+            try:
+                assert "private_report" in {tool.name for tool in await server.list_tools()}
+                await groups.set_user_groups(user.email, [])
+                assert "private_report" not in {tool.name for tool in await server.list_tools()}
+                with pytest.raises(ToolError, match="Missing required scope"):
+                    await server.call_tool("create_group", {"name": "forbidden"})
+            finally:
+                auth_context_var.reset(context_token)
 
         client.portal.call(scenario)

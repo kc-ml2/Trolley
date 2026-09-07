@@ -19,10 +19,10 @@ class DynamicToolRegistry:
         conflicts = [operation.name for operation in operations if operation.name in SystemToolName]
         if conflicts:
             raise ValueError(f"Operations conflict with system tools: {', '.join(conflicts)}")
-        active_names = {operation.name for operation in operations}
-        for name in self.names - active_names:
+        # Refresh existing signatures/descriptions as well as adding/removing names.
+        for name in self.names:
             self.server.remove_tool(name)
-        self.names &= active_names
+        self.names.clear()
         for operation in operations:
             self.register(operation)
         return len(self.names)
@@ -59,7 +59,13 @@ class DynamicToolRegistry:
         self.server.add_tool(
             invoke,
             name=operation.name,
-            description=operation.description,
+            description=operation.description
+            + (
+                " Returns the first page. If has_more is true, continue with execute "
+                "using next_cursor as cursor and identical arguments. Pages are not a snapshot."
+                if operation.definition.get("pagination") is not None
+                else ""
+            ),
             meta={"dynamic": True, "access": str(operation.access)},
         )
         registered = self.server._tool_manager.get_tool(operation.name)

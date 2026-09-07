@@ -2,6 +2,15 @@ from enum import StrEnum
 
 
 class SystemToolName(StrEnum):
+    CREATE_GROUP = "create_group"
+    LIST_GROUPS = "list_groups"
+    UPDATE_GROUP = "update_group"
+    DELETE_GROUP = "delete_group"
+    SET_USER_GROUPS = "set_user_groups"
+    LIST_GROUP_MEMBERSHIPS = "list_group_memberships"
+    GRANT_GROUP_OPERATION = "grant_group_operation"
+    REVOKE_GROUP_OPERATION = "revoke_group_operation"
+    LIST_GROUP_OPERATION_GRANTS = "list_group_operation_grants"
     LIST_USERS = "list_users"
     CREATE_USER = "create_user"
     INVITE_USER = "invite_user"

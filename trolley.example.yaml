@@ -23,4 +23,8 @@ targets:
   payments-db:
     kind: postgresql
     url: postgresql://user:password@127.0.0.1:5432/payments
+    # Connection timeout and Operation execution/result safety limits.
     timeout: 10
+    query_timeout: 30
+    max_rows: 1000
+    max_result_bytes: 1000000

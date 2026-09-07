@@ -39,6 +39,10 @@ def present_operation(operation: Operation, *, include_definition: bool = True) 
         "description": operation.description,
         "access": operation.access,
         "input_schema": operation.input_schema,
+        "pagination": {
+            "enabled": operation.definition.get("pagination") is not None,
+            "continuation_tool": "execute",
+        },
         "is_active": operation.is_active,
     }
     if include_definition:

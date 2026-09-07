@@ -1,11 +1,14 @@
 from typing import Any
 
+from tortoise.transactions import in_transaction
+
+from trolley.application.groups import resolve_groups
 from trolley.application.presenters import present_api_key, present_user
 from trolley.auth.api_keys import create_api_key
 from trolley.auth.roles import normalize_email, validate_role_assignment
 from trolley.domain.users import UserOperationAccess, UserRole
 from trolley.email import EmailService
-from trolley.persistence.models import ApiKey, User
+from trolley.persistence.models import ApiKey, GroupMembership, User
 
 
 async def list_users() -> list[dict[str, Any]]:
@@ -18,11 +21,16 @@ async def create_user(
     role: UserRole = UserRole.USER,
     *,
     admin_emails: frozenset[str] = frozenset(),
+    group_names: list[str] | None = None,
 ) -> dict[str, Any]:
     email = normalize_email(email)
     validate_role_assignment(email, role, admin_emails)
-    user = await User.create(email=email, name=name.strip(), role=role)
-    return present_user(user)
+    async with in_transaction():
+        selected = await resolve_groups(group_names or [])
+        user = await User.create(email=email, name=name.strip(), role=role)
+        for group in selected:
+            await GroupMembership.get_or_create(user=user, group=group)
+    return {**present_user(user), "groups": sorted({g.name for g in selected})}
 
 
 async def invite_user(
@@ -33,21 +41,22 @@ async def invite_user(
     onboarding_url: str,
     *,
     admin_emails: frozenset[str] = frozenset(),
+    group_names: list[str] | None = None,
 ) -> dict[str, Any]:
+    selected = await resolve_groups(group_names or [])
     email = normalize_email(email)
     role = UserRole.ADMIN if email in admin_emails else UserRole.USER
     user = await User.get_or_none(email=email)
     if user is None:
-        user = await User.create(email=email, name=name.strip(), role=role)
+        user = await User.create(email=email, name=name.strip(), role=UserRole.USER)
     elif not user.is_active:
         raise ValueError("Only an active user can be invited")
     elif user.role == UserRole.ADMIN and role != UserRole.ADMIN:
         raise PermissionError("Admin email is not in admins.emails")
-    elif user.role != role:
-        user.role = role
-        await user.save()
 
-    key, secret = await create_api_key(user, key_name.strip())
+    # Deliver an inactive key. Only activate it together with the role and
+    # memberships after delivery; crashes/failures leave no usable new key.
+    key, secret = await create_api_key(user, key_name.strip(), is_active=False)
     try:
         await email_service.send(
             user.email,
@@ -70,8 +79,24 @@ Onboarding instructions: {onboarding_url}
         await key.save()
         raise
 
+    # Email cannot be rolled back. If finalization fails the delivered key stays
+    # inactive, while role and membership changes roll back atomically.
+    async with in_transaction():
+        user = await User.filter(id=user.id, is_active=True).select_for_update().get()
+        selected = await resolve_groups(group_names or [])
+        user.role = role
+        await user.save(update_fields=["role"])
+        for group in selected:
+            await GroupMembership.get_or_create(user=user, group=group)
+        key.is_active = True
+        await key.save(update_fields=["is_active"])
+    memberships = (
+        await GroupMembership.filter(user=user)
+        .order_by("group__name")
+        .values_list("group__name", flat=True)
+    )
     return {
-        "user": present_user(user),
+        "user": {**present_user(user), "groups": memberships},
         "api_key": present_api_key(key),
         "email_sent": True,
     }

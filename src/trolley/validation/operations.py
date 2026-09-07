@@ -39,6 +39,28 @@ def validate_definition(
     definition: dict[str, Any],
     input_schema: dict[str, Any],
 ) -> None:
+    sql = definition.get("sql")
+    if not isinstance(sql, str) or not sql.strip():
+        raise ValueError("PostgreSQL operation needs a non-empty SQL string")
+    if not isinstance(definition.get("fetch", True), bool):
+        raise ValueError("PostgreSQL fetch must be a boolean")
+    pagination = definition.get("pagination")
+    if pagination is not None:
+        if not definition.get("fetch", True):
+            raise ValueError("Pagination is only supported for read queries")
+        if not isinstance(pagination, dict) or set(pagination) != {"order_by"}:
+            raise ValueError("pagination must contain only order_by")
+        columns = pagination["order_by"]
+        if (
+            not isinstance(columns, list)
+            or not columns
+            or any(
+                not isinstance(column, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column)
+                for column in columns
+            )
+            or len(set(columns)) != len(columns)
+        ):
+            raise ValueError("pagination.order_by must list unique output column identifiers")
     parameters = definition.get("parameters", [])
     if not isinstance(parameters, list) or not all(isinstance(item, str) for item in parameters):
         raise ValueError("PostgreSQL operation parameters must be a list of names")

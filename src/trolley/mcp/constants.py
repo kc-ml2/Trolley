@@ -10,6 +10,19 @@ RESERVED_TOOL_NAMES: Final = frozenset(SystemToolName)
 
 SYSTEM_TOOL_POLICIES: Final = MappingProxyType(
     {
+        SystemToolName.CREATE_GROUP: ToolPolicy(Scope.ADMIN, ("name",)),
+        SystemToolName.LIST_GROUPS: ToolPolicy(Scope.ADMIN),
+        SystemToolName.UPDATE_GROUP: ToolPolicy(Scope.ADMIN, ("name",)),
+        SystemToolName.DELETE_GROUP: ToolPolicy(Scope.ADMIN, ("name",)),
+        SystemToolName.SET_USER_GROUPS: ToolPolicy(Scope.ADMIN, ("email",)),
+        SystemToolName.LIST_GROUP_MEMBERSHIPS: ToolPolicy(Scope.ADMIN),
+        SystemToolName.GRANT_GROUP_OPERATION: ToolPolicy(
+            Scope.ADMIN, ("group_name", "operation_name")
+        ),
+        SystemToolName.REVOKE_GROUP_OPERATION: ToolPolicy(
+            Scope.ADMIN, ("group_name", "operation_name")
+        ),
+        SystemToolName.LIST_GROUP_OPERATION_GRANTS: ToolPolicy(Scope.ADMIN),
         SystemToolName.LIST_USERS: ToolPolicy(Scope.ADMIN),
         SystemToolName.CREATE_USER: ToolPolicy(Scope.ADMIN, ("email", "name")),
         SystemToolName.INVITE_USER: ToolPolicy(Scope.ADMIN, ("email", "name", "key_name")),
