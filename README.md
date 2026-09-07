@@ -472,6 +472,15 @@ PostgreSQL integration tests are opt-in. Use a **disposable test database**, nev
 operational Target. The role needs schema/table/function creation privileges. Tests
 create and remove a uniquely named schema; no other schemas are modified.
 
+If Docker is running, start an isolated PostgreSQL container, run the tests, and remove
+it automatically:
+
+```bash
+./scripts/test-postgres-integration.sh
+```
+
+Alternatively, provide an existing **disposable** PostgreSQL database explicitly:
+
 ```bash
 TROLLEY_TEST_POSTGRES_URL=postgresql://test:test@127.0.0.1:5432/trolley_test \
   pytest -q tests/test_postgres_integration.py
