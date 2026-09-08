@@ -76,7 +76,21 @@ trolley target test payments-db
 trolley
 ```
 
-In another terminal, issue the first administrator's key:
+With SMTP configured, email initial access to one or more administrators listed in
+`admins.emails`:
+
+```bash
+trolley setup admin@example.com other-admin@example.com
+```
+
+This sends an API key and onboarding link to each recipient without printing the
+secret. Each run issues new keys; existing keys remain valid. Recipients are processed
+independently: if a later invitation fails, earlier successful invitations remain valid.
+The command uses your existing configuration and catalog; it does not install a service
+or modify `admins.emails`. Use the same configuration path and working directory as the
+server, especially when the catalog path is relative.
+
+Without SMTP, in another terminal, issue the first administrator's key:
 
 ```bash
 trolley admin issue-key admin@example.com --name local-admin

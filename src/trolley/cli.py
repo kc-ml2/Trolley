@@ -6,10 +6,12 @@ from tortoise import Tortoise
 
 from trolley.application import targets
 from trolley.application.admins import ensure_admin_users
+from trolley.application.users import invite_user
 from trolley.auth.api_keys import create_api_key
 from trolley.auth.roles import normalize_email
 from trolley.config import ConfigurationError, Settings, get_settings, validate_runtime_settings
 from trolley.domain.users import UserRole
+from trolley.email import EmailService
 from trolley.persistence.database import tortoise_config
 from trolley.persistence.models import User
 
@@ -17,6 +19,10 @@ from trolley.persistence.models import User
 def parser() -> argparse.ArgumentParser:
     command_parser = argparse.ArgumentParser(prog="trolley")
     commands = command_parser.add_subparsers(dest="command")
+
+    setup = commands.add_parser("setup", help="Email initial access to allowlisted administrators")
+    setup.add_argument("emails", nargs="+", help="Administrator emails from admins.emails")
+    setup.add_argument("--name", default="setup-access", help="Name of the new API key")
 
     admin = commands.add_parser("admin", help="Manage local administrator access")
     admin_commands = admin.add_subparsers(dest="admin_command", required=True)
@@ -56,6 +62,35 @@ async def issue_admin_key(settings: Settings, email: str, name: str) -> str:
         await Tortoise.close_connections()
 
 
+async def setup_admins(settings: Settings, emails: list[str], key_name: str) -> None:
+    """Issue emailed keys using the same activation safeguards as MCP invitations."""
+    validate_runtime_settings(settings)
+    selected = sorted({normalize_email(email) for email in emails})
+    if any(email not in settings.admin_emails for email in selected):
+        raise PermissionError("All setup emails must be listed in admins.emails")
+    service = EmailService(settings)
+    if not await service.check():
+        raise ConfigurationError("SMTP must be configured for setup")
+
+    await Tortoise.init(config=tortoise_config(settings))
+    try:
+        await Tortoise.generate_schemas()
+        for email in selected:
+            await invite_user(
+                email,
+                email,
+                key_name,
+                service,
+                settings.public_base_url.rstrip("/") + "/onboarding.md",
+                admin_emails=settings.admin_emails,
+            )
+            print(f"Administrator invitation sent: {email}")
+    finally:
+        await Tortoise.close_connections()
+    print(f"MCP endpoint: {settings.public_base_url.rstrip('/')}/mcp/")
+    print("Enter the emailed key in your MCP client's secret settings.")
+
+
 def main() -> None:
     command_parser = parser()
     args = command_parser.parse_args()
@@ -63,6 +98,11 @@ def main() -> None:
         settings = validate_runtime_settings(get_settings())
     except ConfigurationError as error:
         command_parser.error(str(error))
+
+    if args.command == "setup":
+        print("Setup issues a NEW key for each email; existing keys remain valid.")
+        asyncio.run(setup_admins(settings, args.emails, args.name))
+        return
 
     if args.command == "target":
         if args.target_command == "list":
