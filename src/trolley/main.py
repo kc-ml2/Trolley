@@ -84,6 +84,16 @@ request one from their Trolley administrator.
   in a local `TROLLEY_API_KEY` environment variable.
 - After the user confirms that the key is configured, reconnect to Trolley.
 
+## Connect and say hello
+
+After saving the key, reconnect or restart your MCP client if needed.
+Once connected, ask:
+
+> Trolley, what can you do for me right now?
+> List the Operations available to me and explain how I can use them.
+
+The agent should call `list_operations` rather than assume which tools are available.
+
 ## Using Trolley
 
 After connecting, call `list_operations` to discover the operations currently

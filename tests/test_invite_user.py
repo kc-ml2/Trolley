@@ -39,7 +39,12 @@ def test_invite_user_emails_key_without_returning_secret(tmp_path) -> None:
             body = service.send.await_args.args[2]
             assert "sk-trolley-" in body
             assert "https://trolley.example.com/onboarding.md" in body
-            assert "agent conversation" in body
+            assert "AI conversation" in body
+            assert body.index("/onboarding.md") < body.index("API key: sk-trolley-")
+            assert "https://trolley.example.com/mcp/" in body
+            assert "Bearer <your-api-key>" in body
+            assert "Trolley, what can you do for me right now?" in body
+            assert "list_operations" in body
 
             retried = await invite_user(
                 "user@example.com",

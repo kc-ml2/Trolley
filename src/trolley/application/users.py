@@ -60,18 +60,67 @@ async def invite_user(
     try:
         await email_service.send(
             user.email,
-            "You have been invited to Trolley",
+            "You're invited to Trolley — let's get connected",
             f"""Hello {user.name},
 
-You have been invited to Trolley.
+You've been invited to Trolley, where you can use your team's shared data
+tools through your AI client.
+
+1. LET YOUR AI AGENT GUIDE YOU
+
+Copy this message into your AI client:
+
+  Read this page and help me connect to Trolley:
+  {onboarding_url}
+  I'll enter my API key directly in the client's settings when needed.
+
+Your agent can use the onboarding instructions to guide you through the
+connection process. Depending on your client, you may need to add the
+MCP server manually.
+
+2. ENTER YOUR API KEY
+
+When prompted, enter this key directly in your MCP client's secret or
+authentication settings, or use the TROLLEY_API_KEY environment variable
+if your client supports it.
 
 API key: {secret}
 
-Treat this key like a password. Do not paste it into an agent conversation.
-Enter it directly in your MCP client's secret settings or a local
-TROLLEY_API_KEY environment variable.
+Keep this key private. Treat it like a password. Do not paste it into an
+AI conversation, share it with others, or commit it to a repository.
 
-Onboarding instructions: {onboarding_url}
+3. CONNECT AND SAY HELLO
+
+Save your settings, then reconnect or restart your MCP client if needed.
+Once connected, try asking:
+
+  Trolley, what can you do for me right now?
+  List the Operations available to me and explain how I can use them.
+
+Your agent should call list_operations to discover the tools your account
+can access. Then ask it to perform an available task — for example, if a
+revenue reporting tool is available:
+
+  Show me the revenue for August 2026.
+
+If no suitable tool is available, your agent can ask for your approval
+before sending a request to a Trolley administrator.
+
+PREFER TO CONNECT MANUALLY?
+
+Add an MCP server in your client using these details:
+
+  Server name: trolley
+  Server URL: {onboarding_url.removesuffix("/onboarding.md")}/mcp/
+  Authentication: Bearer API key
+  Authorization header, if required: Bearer <your-api-key>
+
+Replace <your-api-key> with your key only in the client's authentication
+settings, not in an AI conversation.
+
+For detailed instructions: {onboarding_url}
+
+Need help? Contact the administrator who invited you.
 """,
         )
     except Exception:
