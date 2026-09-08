@@ -10,9 +10,10 @@ from trolley.application.pagination import next_page, resolve_page
 from trolley.auth.context import AuthContext
 from trolley.connectors import database
 from trolley.domain.operations import ExecutionStatus
-from trolley.persistence.models import Execution, ExecutionPage, Operation
+from trolley.persistence.models import Execution, ExecutionPage, Operation, User
 from trolley.serialization import json_value
 from trolley.targets import get_targets
+from trolley.validation.operations import validate_definition
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,16 @@ async def execute_operation(
     if definition is None or definition.kind != target.kind:
         raise ValueError("Operation target is not configured")
 
-    arguments = arguments or {}
+    arguments = dict(arguments or {})
+    # Validate catalog definitions as well as newly created/updated Operations.
+    validate_definition(target, operation.definition, operation.input_schema)
+    bindings = operation.definition.get("bindings", {})
+    if set(arguments) & set(bindings):
+        raise ValueError("Server-bound parameters cannot be supplied by the client")
     validate(instance=arguments, schema=operation.input_schema)
+    if bindings:
+        user = await User.get(id=context.user_id, is_active=True)
+        arguments.update({name: user.email for name in bindings})
     paginated = operation.definition.get("pagination") is not None
     if not paginated and (page_size is not None or cursor is not None):
         raise ValueError("This operation does not support pagination")

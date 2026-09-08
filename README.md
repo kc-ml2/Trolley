@@ -105,12 +105,44 @@ appropriate network access controls; do not send Bearer tokens over public HTTP.
 
 ## 2. Connect your MCP client
 
-Your server's onboarding document provides connection instructions:
+Trolley serves an agent-readable connection guide at `/onboarding.md`. An invitation
+email includes this URL and your API key. You do not need to give the key to your agent.
+
+### Follow the onboarding guide
+
+1. **Receive an invitation.** An administrator sends your API key and onboarding URL
+   by email. Use the URL from your invitation, not the example hostname below.
+2. **Give the onboarding URL to your agent.** Ask:
+
+   > Read this page and help me connect to Trolley:
+   > https://trolley.example.com/onboarding.md
+   > I'll enter my API key directly in the client's settings when needed.
+
+   The agent can read the guide and help prepare the MCP settings. Depending on your
+   client, you may need to add the server manually.
+3. **Enter your API key yourself.** Use your MCP client's secret or authentication
+   settings, or the `TROLLEY_API_KEY` environment variable if your client supports it.
+   **Do not paste the key into the agent conversation.**
+4. **Connect your MCP client.** Save the settings, then reconnect or restart if needed.
+5. **Discover what you can do.** Ask:
+
+   > Trolley, what can you do for me right now?
+   > List the Operations available to me and explain how I can use them.
+
+   The agent should call `list_operations` to discover your actual access rather than
+   assume which Tools are available. Then ask it to perform an available task, such as
+   "Show me the revenue for August 2026" if a revenue reporting Tool is available.
+   If no suitable Tool exists, the agent can ask for your approval before submitting
+   a request to an administrator with `request_operation`.
 
 ```text
-http://localhost:8000/onboarding.md
+Receive invitation → Share onboarding URL → Enter key privately
+→ Connect MCP client → Ask the agent to do a task
 ```
 
+### Connect manually
+
+For a local server, the onboarding guide is at `http://localhost:8000/onboarding.md`.
 A typical client configuration is:
 
 ```json
@@ -129,11 +161,8 @@ A typical client configuration is:
 Adapt this to your client's secret-management mechanism. Do not paste a real key
 into a prompt or commit it to a configuration repository.
 
-After connecting, ask:
-
-> List the Operations I can use in Trolley.
-
-The client calls `list_operations`. To run one, it can call the named Tool or
+After connecting, use the discovery prompt above. To run an Operation, the client
+can call the named Tool or
 `execute` with the Operation name and inputs. Refresh discovery when permissions
 or Tools change; a client's cached Tool list can be stale.
 
@@ -181,7 +210,7 @@ Call `create_operation`:
 ```
 
 `parameters` maps inputs to PostgreSQL placeholders in order; its names must match
-`input_schema.required`. Date inputs arrive as strings, so the example casts through
+`input_schema.required` plus any server-bound parameter names in `bindings`. Date inputs arrive as strings, so the example casts through
 `text`. `fetch: true` returns rows; `fetch: false` returns a PostgreSQL command status.
 Use single statements suitable for a transaction.
 
@@ -415,6 +444,47 @@ sensitive data. Protect and back up the catalog; automatic redaction and history
 retention are not implemented. If a successful query returns `audit_warning`, it ran
 but its audit finalization failed: investigate server logs, **do not rerun the query**.
 Likewise, do not blindly retry writes after a timeout or lost connection.
+
+## Caller-specific Operations
+
+Administrators can ask their agent to create a shared Operation that filters data by
+its authenticated caller's email. No per-user Tool copies are needed. For example:
+
+> Our model keys have an email tag maintained by administrators. Inspect the schema
+> and create a my_usage Operation that joins those keys to usage logs and filters by
+> the authenticated Trolley user's email. Bind the email on the server, not as a client
+> input. Include all matching keys and return no rows when none match.
+
+The agent must inspect the actual schema and clarify the tag format and join rules;
+Trolley does not infer whether a tag is trustworthy. The administrator approves that
+mapping and the SQL. Arbitrary user-editable tags may not be suitable for authorization.
+
+For an illustrative table with an `owner_email` column, an Operation definition is:
+
+```json
+{
+  "sql": "SELECT id, total_tokens FROM usage_logs WHERE owner_email = $1 AND day >= $2::text::date",
+  "parameters": ["caller_email", "start_date"],
+  "bindings": {"caller_email": "authenticated_user.email"},
+  "fetch": true
+}
+```
+
+Its public `input_schema` contains only `start_date`, with `required: ["start_date"]`.
+Bound parameters must not appear in the schema's properties or required list. The
+only supported binding source is currently `authenticated_user.email`.
+
+At execution time, Trolley reads the active caller's current catalog email and passes
+it through PostgreSQL parameter binding. Even administrators use their own email;
+there is no caller override. Client attempts to supply a bound parameter are rejected,
+including when the public schema permits additional properties. Both named Tools and
+`execute` use this same path. The resolved arguments are recorded in the execution
+audit and included in pagination fingerprints; an email change invalidates old cursors.
+
+Bindings do not add filtering to SQL automatically. The approved query must use the
+parameter in the appropriate filter. API-key authentication identifies a Trolley
+account; it does not independently verify ownership of a database tag or email address.
+Existing Operations without bindings behave as before. No catalog migration is needed.
 
 ## Email configuration
 

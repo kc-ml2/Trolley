@@ -289,7 +289,14 @@ def create_mcp_server(
 
     @server.system_tool(
         SystemToolName.CREATE_OPERATION,
-        description="Register and immediately expose a dynamic operation (admin)",
+        description=(
+            "Register and immediately expose a dynamic operation (admin). "
+            "To filter by the authenticated caller's email, set definition.bindings to "
+            '{"caller_email": "authenticated_user.email"} and include caller_email in '
+            "definition.parameters at its SQL placeholder position, but NOT in input_schema. "
+            "The server supplies this value; clients cannot override it. "
+            "Administrators must approve the SQL and the trustworthiness of the email mapping."
+        ),
     )
     async def create_operation(
         name: str,
@@ -307,7 +314,11 @@ def create_mcp_server(
 
     @server.system_tool(
         SystemToolName.UPDATE_OPERATION,
-        description="Update and immediately reload a dynamic operation (admin)",
+        description=(
+            "Update and immediately reload a dynamic operation (admin). Supply complete "
+            "replacement definitions/schemas. definition.bindings can map parameter names to "
+            "authenticated_user.email; include these names in parameters, not input_schema."
+        ),
     )
     async def update_operation(
         name: str,

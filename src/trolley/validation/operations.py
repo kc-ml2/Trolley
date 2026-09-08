@@ -66,6 +66,17 @@ def validate_definition(
         raise ValueError("PostgreSQL operation parameters must be a list of names")
     if len(parameters) != len(set(parameters)):
         raise ValueError("PostgreSQL operation parameters must be unique")
+    bindings = definition.get("bindings", {})
+    if not isinstance(bindings, dict) or any(
+        not isinstance(name, str)
+        or not name.isidentifier()
+        or keyword.iskeyword(name)
+        or source != "authenticated_user.email"
+        for name, source in bindings.items()
+    ):
+        raise ValueError("bindings must map parameter identifiers to authenticated_user.email")
     required = set(input_schema.get("required", []))
-    if set(parameters) != required:
-        raise ValueError("PostgreSQL parameters must match input_schema.required")
+    if set(bindings) & (set(input_schema.get("properties", {})) | required):
+        raise ValueError("Server-bound parameters must not appear in input_schema")
+    if set(parameters) != required | set(bindings):
+        raise ValueError("PostgreSQL parameters must match input_schema.required plus bindings")
