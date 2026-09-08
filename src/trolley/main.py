@@ -90,9 +90,12 @@ After saving the key, reconnect or restart your MCP client if needed.
 Once connected, ask:
 
 > Trolley, what can you do for me right now?
-> List the Operations available to me and explain how I can use them.
+> Explain my available capabilities and help me get started.
 
-The agent should call `list_operations` rather than assume which tools are available.
+The agent should call `get_my_capabilities` first to learn the caller's effective role,
+available system tools, and next steps. Administrators can inspect Targets and create
+Operations; regular users can discover, run, or request Operations. An empty
+`list_operations` result does not imply missing administrator access.
 
 ## Using Trolley
 

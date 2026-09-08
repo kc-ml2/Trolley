@@ -98,8 +98,12 @@ def create_mcp_server(
         title="Trolley",
         description="Execute registered PostgreSQL operations",
         instructions=(
-            "Trolley operations may change at runtime. Call list_operations after "
-            "connecting to discover the operations currently available to you. Use "
+            "Call get_my_capabilities after connecting to learn your role, available "
+            "system tools, and next steps. An empty list_operations result does not mean "
+            "you lack administrator access. Administrators can inspect Targets and create "
+            "Operations using their available system tools. "
+            "Trolley operations may change at runtime. Call list_operations to discover "
+            "the operations currently available to you. Use "
             "execute with an operation name and arguments matching its input_schema. "
             "Call list_operations again whenever an expected operation is missing or "
             "permissions may have changed. If no operation meets the user's need, ask "
@@ -123,6 +127,49 @@ def create_mcp_server(
         ),
     )
     server.email_service = email_service
+
+    @server.system_tool(
+        SystemToolName.GET_MY_CAPABILITIES,
+        description=(
+            "Start here: learn your effective role, available system tools, and next steps. "
+            "This describes capabilities, not task history or assigned work."
+        ),
+    )
+    async def get_my_capabilities(*, auth_context: AuthContext) -> dict:
+        # Reuse discovery's scope filtering and only describe registered system tools.
+        visible = await server.list_tools()
+        names = sorted(tool.name for tool in visible if tool.name in SYSTEM_TOOL_POLICIES)
+        guidance = {
+            "list_targets": "Discover configured databases with list_targets.",
+            "get_target_schema": "Inspect a selected database with get_target_schema.",
+            "create_operation": (
+                "Review SQL, inputs, and access policy, then create an Operation "
+                "with create_operation."
+            ),
+            "list_operations": "Discover accessible database Operations with list_operations.",
+            "execute": "Run a suitable Operation with execute and its declared inputs.",
+        }
+        next_steps = [text for name, text in guidance.items() if name in names]
+        if "create_operation" not in names and "request_operation" in names:
+            next_steps.append(
+                "If no suitable Operation exists, confirm the request with the user "
+                "before submitting request_operation. Do not include sensitive data."
+            )
+        return {
+            "role": auth_context.role,
+            "system_tools": names,
+            "guidance": (
+                "You have administrator access. Use the available system tools below "
+                "to inspect databases, create Operations, and manage users, groups, and grants."
+                if auth_context.role == UserRole.ADMIN
+                else "You can discover and run Operations available to your account."
+            ),
+            "next_steps": next_steps,
+            "operations_note": (
+                "list_operations lists active accessible database Operations, not system tools. "
+                "An empty result does not mean you lack administrator access."
+            ),
+        }
 
     server.system_tool(SystemToolName.CREATE_GROUP, description="Create a group (admin)")(
         groups.create_group

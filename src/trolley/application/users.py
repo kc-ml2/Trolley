@@ -95,11 +95,15 @@ Save your settings, then reconnect or restart your MCP client if needed.
 Once connected, try asking:
 
   Trolley, what can you do for me right now?
-  List the Operations available to me and explain how I can use them.
+  Explain my available capabilities and help me get started.
 
-Your agent should call list_operations to discover the tools your account
-can access. Then ask it to perform an available task — for example, if a
-revenue reporting tool is available:
+Your agent should first call get_my_capabilities to learn your role and
+available tools. Administrators can inspect databases and create Operations;
+regular users can discover, run, or request Operations. list_operations lists
+saved database Operations, not the built-in administrator tools.
+
+Then ask it to perform an available task — for example, if a revenue reporting
+tool is available:
 
   Show me the revenue for August 2026.
 

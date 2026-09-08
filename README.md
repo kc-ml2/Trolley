@@ -127,10 +127,15 @@ email includes this URL and your API key. You do not need to give the key to you
 5. **Discover what you can do.** Ask:
 
    > Trolley, what can you do for me right now?
-   > List the Operations available to me and explain how I can use them.
+   > Explain my available capabilities and help me get started.
 
-   The agent should call `list_operations` to discover your actual access rather than
-   assume which Tools are available. Then ask it to perform an available task, such as
+   The agent should first call `get_my_capabilities` to learn your effective role,
+   actually available system tools, and suggested next steps. Administrators can start
+   with `list_targets`, inspect a database using `get_target_schema`, and create an
+   Operation. Regular users can discover, run, or request Operations.
+   `list_operations` lists saved database Operations, not built-in system tools; an
+   empty list does not mean you lack administrator access.
+   Then ask the agent to perform an available task, such as
    "Show me the revenue for August 2026" if a revenue reporting Tool is available.
    If no suitable Tool exists, the agent can ask for your approval before submitting
    a request to an administrator with `request_operation`.

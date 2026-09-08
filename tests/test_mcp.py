@@ -34,6 +34,7 @@ def test_mcp_has_small_tool_surface() -> None:
         "list_targets",
         "get_target_schema",
         "list_operations",
+        "get_my_capabilities",
         "request_operation",
         "list_my_operation_requests",
         "list_operation_requests",
@@ -52,7 +53,7 @@ def test_mcp_has_small_tool_surface() -> None:
 def test_server_instructs_agents_to_discover_operations() -> None:
     server = create_mcp_server()
 
-    assert "Call list_operations after connecting" in server._lowlevel_server.instructions
+    assert "Call get_my_capabilities after connecting" in server._lowlevel_server.instructions
     assert "Use execute" in server._lowlevel_server.instructions
     assert "has_more" in server._lowlevel_server.instructions
     assert "not a database snapshot" in server._lowlevel_server.instructions

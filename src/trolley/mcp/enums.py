@@ -2,6 +2,7 @@ from enum import StrEnum
 
 
 class SystemToolName(StrEnum):
+    GET_MY_CAPABILITIES = "get_my_capabilities"
     CREATE_GROUP = "create_group"
     LIST_GROUPS = "list_groups"
     UPDATE_GROUP = "update_group"
