@@ -44,6 +44,10 @@ def validate_definition(
         raise ValueError("PostgreSQL operation needs a non-empty SQL string")
     if not isinstance(definition.get("fetch", True), bool):
         raise ValueError("PostgreSQL fetch must be a boolean")
+    if type(definition.get("export", False)) is not bool:
+        raise ValueError("export must be a boolean")
+    if definition.get("export") and not definition.get("fetch", True):
+        raise ValueError("Export requires fetch: true")
     pagination = definition.get("pagination")
     if pagination is not None:
         if not definition.get("fetch", True):

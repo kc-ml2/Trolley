@@ -20,6 +20,15 @@ class SmtpSecurity(StrEnum):
     TLS = "tls"
 
 
+class ExportSettings(BaseModel):
+    directory: str = "./trolley-exports"
+    max_rows: int = Field(default=100_000, gt=0, strict=True)
+    max_bytes: int = Field(default=100_000_000, gt=0, strict=True)
+    timeout_seconds: int = Field(default=300, gt=0, strict=True)
+    ttl_seconds: int = Field(default=3600, gt=0, strict=True)
+    max_jobs: int = Field(default=10, gt=0, strict=True)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -34,6 +43,7 @@ class Settings(BaseModel):
     smtp_password: SecretStr | None = None
     smtp_security: SmtpSecurity = SmtpSecurity.STARTTLS
     smtp_timeout: float = 10
+    exports: ExportSettings = Field(default_factory=ExportSettings)
 
     @field_validator("admin_emails", mode="before")
     @classmethod
@@ -64,6 +74,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
 
     try:
         return Settings(
+            exports=_mapping(document, "exports"),
             public_base_url=server.get("public_base_url", "http://localhost:8000"),
             database_url=catalog.get("database_url", "sqlite://./trolley.db"),
             admin_emails=admins.get("emails", []),

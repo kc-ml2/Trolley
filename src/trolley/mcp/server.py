@@ -127,6 +127,35 @@ def create_mcp_server(
         ),
     )
     server.email_service = email_service
+    server.export_manager = None
+
+    @server.system_tool(
+        SystemToolName.START_EXPORT,
+        description=(
+            "Start a bounded read-only JSONL.gz export of an approved export-enabled Operation. "
+            "Obtain user agreement on scope and sensitive body inclusion. Uses normal access "
+            "checks and server bindings. Poll get_my_export; no data bodies returned in MCP."
+        ),
+    )
+    async def start_export(
+        name: str, arguments: dict | None = None, *, auth_context: AuthContext
+    ) -> dict:
+        if server.export_manager is None:
+            raise ValueError("Export service unavailable")
+        return await server.export_manager.start(name, arguments, auth_context)
+
+    @server.system_tool(
+        SystemToolName.GET_MY_EXPORT,
+        description=(
+            "Check your export status and authenticated download URL. Download needs an active "
+            "owner API key in Authorization header, never in URL or agent conversation."
+        ),
+    )
+    async def get_my_export(export_id: str, *, auth_context: AuthContext) -> dict:
+        if server.export_manager is None:
+            raise ValueError("Export service unavailable")
+        job = await server.export_manager.get(export_id, auth_context)
+        return server.export_manager.present(job)
 
     @server.system_tool(
         SystemToolName.GET_MY_CAPABILITIES,
@@ -342,7 +371,10 @@ def create_mcp_server(
             '{"caller_email": "authenticated_user.email"} and include caller_email in '
             "definition.parameters at its SQL placeholder position, but NOT in input_schema. "
             "The server supplies this value; clients cannot override it. "
-            "Administrators must approve the SQL and the trustworthiness of the email mapping."
+            "Administrators must approve the SQL and the trustworthiness of the email mapping. "
+            "Set definition.export=true to allow start_export: a bounded read-only snapshot "
+            "to JSONL.gz, independent of MCP pagination. Explicitly select safe columns and "
+            "define date/body controls in SQL and input_schema; export does not add row filters."
         ),
     )
     async def create_operation(

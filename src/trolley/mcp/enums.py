@@ -2,6 +2,8 @@ from enum import StrEnum
 
 
 class SystemToolName(StrEnum):
+    START_EXPORT = "start_export"
+    GET_MY_EXPORT = "get_my_export"
     GET_MY_CAPABILITIES = "get_my_capabilities"
     CREATE_GROUP = "create_group"
     LIST_GROUPS = "list_groups"

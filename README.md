@@ -156,6 +156,7 @@ and leaves existing keys valid.
 | Create tools and invite users | [Administrator walkthrough](docs/guide.md#3-create-a-tool-and-share-it-with-a-group) |
 | Manage groups and permissions | [Access policies](docs/guide.md#managing-access) |
 | Filter by caller email | [Caller-specific Operations](docs/guide.md#caller-specific-operations) |
+| Download approved query results | [JSONL.gz exports](docs/exports.md) |
 | Handle large results | [Limits and pagination](docs/guide.md#query-results-and-large-logs) |
 | Send invitations | [SMTP configuration](docs/guide.md#email-configuration) |
 | Troubleshoot or upgrade | [Troubleshooting](docs/guide.md#troubleshooting) · [Backups](docs/guide.md#backups-and-upgrades) |

@@ -31,6 +31,8 @@ SYSTEM_TOOL_POLICIES: Final = MappingProxyType(
         SystemToolName.CREATE_API_KEY: ToolPolicy(Scope.ADMIN, ("email", "name")),
         SystemToolName.LIST_TARGETS: ToolPolicy(Scope.ADMIN),
         SystemToolName.GET_TARGET_SCHEMA: ToolPolicy(Scope.ADMIN, ("name",)),
+        SystemToolName.START_EXPORT: ToolPolicy(Scope.USE, ("name",)),
+        SystemToolName.GET_MY_EXPORT: ToolPolicy(Scope.USE, ("export_id",)),
         SystemToolName.GET_MY_CAPABILITIES: ToolPolicy(Scope.USE),
         SystemToolName.LIST_OPERATIONS: ToolPolicy(Scope.USE),
         SystemToolName.REQUEST_OPERATION: ToolPolicy(Scope.USE, ("title", "description", "reason")),

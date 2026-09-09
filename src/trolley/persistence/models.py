@@ -148,6 +148,22 @@ class ExecutionPage(models.Model):
     query_fingerprint = fields.CharField(max_length=64)
 
 
+class ExportJob(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    operation = fields.ForeignKeyField("models.Operation", on_delete=fields.RESTRICT)
+    user_id = fields.UUIDField()
+    api_key_id = fields.UUIDField()
+    arguments = fields.JSONField()
+    fingerprint = fields.CharField(max_length=64)
+    status = fields.CharField(max_length=16, default="running")
+    row_count = fields.BigIntField(default=0)
+    byte_count = fields.BigIntField(default=0)
+    file_bytes = fields.BigIntField(default=0)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    expires_at = fields.DatetimeField(db_index=True)
+    finished_at = fields.DatetimeField(null=True)
+
+
 class Execution(models.Model):
     id = fields.UUIDField(primary_key=True)
     operation: fields.ForeignKeyRelation[Operation] = fields.ForeignKeyField(

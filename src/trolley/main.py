@@ -1,14 +1,18 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from trolley.application import targets
 from trolley.application.admins import ensure_admin_users
+from trolley.application.exports import ExportManager
+from trolley.auth.context import AuthContext
 from trolley.config import Settings, get_settings, validate_runtime_settings
+from trolley.domain.users import UserRole
 from trolley.mcp.server import create_mcp_app
+from trolley.mcp.token_verifier import TrolleyTokenVerifier
 from trolley.persistence.database import tortoise_config
 from trolley.targets import configure_targets
 
@@ -22,6 +26,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app_settings,
     )
 
+    export_manager = ExportManager(app_settings)
+    mcp_app.state.mcp_server.export_manager = export_manager
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with RegisterTortoise(
@@ -34,14 +41,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await mcp_app.state.email_service.check()
             await targets.sync_targets(app_settings)
             await mcp_app.state.mcp_server.registry.load()
-            async with mcp_app.router.lifespan_context(mcp_app):
-                yield
+            await export_manager.open()
+            try:
+                async with mcp_app.router.lifespan_context(mcp_app):
+                    yield
+            finally:
+                await export_manager.close()
 
     app = FastAPI(title="Trolley", version="0.1.0", lifespan=lifespan)
 
     base_url = app_settings.public_base_url.rstrip("/")
     mcp_url = f"{base_url}/mcp/"
     onboarding_url = f"{base_url}/onboarding.md"
+
+    @app.get("/exports/{export_id}/download")
+    async def download_export(export_id: str, authorization: str | None = Header(default=None)):
+        scheme, _, secret = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not secret:
+            raise HTTPException(401, "Bearer authentication required")
+        token = await TrolleyTokenVerifier(app_settings.admin_emails).verify_token(secret)
+        if token is None:
+            raise HTTPException(401, "Invalid credentials")
+        context = AuthContext(token.subject, token.client_id, UserRole(token.claims["role"]))
+        try:
+            job = await export_manager.get(export_id, context)
+        except Exception as error:
+            raise HTTPException(404, "Export unavailable") from error
+        if job.status != "succeeded" or not export_manager.path(job).is_file():
+            raise HTTPException(409, "Export is not ready or has expired")
+        return FileResponse(
+            export_manager.path(job),
+            media_type="application/gzip",
+            filename=f"trolley-{job.id}.jsonl.gz",
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
 
     @app.get("/health")
     async def health() -> dict[str, str]:

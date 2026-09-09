@@ -5,19 +5,23 @@ Only the uniquely named schema created by this test is removed on completion.
 """
 
 import asyncio
+import gzip
+import json
 import os
 from uuid import uuid4
 
 import asyncpg
 import pytest
 
+from trolley.config import ExportSettings
 from trolley.connectors.database import execute
+from trolley.connectors.export import export_jsonl
 
 
 @pytest.mark.skipif(
     not os.getenv("TROLLEY_TEST_POSTGRES_URL"), reason="Disposable PostgreSQL URL not configured"
 )
-def test_real_postgresql_pagination():
+def test_real_postgresql_pagination(tmp_path):
     async def scenario():
         url = os.environ["TROLLEY_TEST_POSTGRES_URL"]
         schema = "trolley_test_" + uuid4().hex
@@ -104,6 +108,32 @@ def test_real_postgresql_pagination():
                     {"sql": "SELECT pg_sleep(2), 1 AS id", "pagination": {"order_by": ["id"]}},
                     {},
                     page_size=1,
+                )
+            definition = {
+                "sql": f'SELECT id, payload FROM "{schema}".logs WHERE id >= $1 ORDER BY id',
+                "parameters": ["minimum"],
+            }
+            limits = ExportSettings()
+            path = tmp_path / "export.gz"
+            rows, _, _ = await export_jsonl(config, definition, {"minimum": 2}, path, limits)
+            assert rows == 4
+            with gzip.open(path, "rt") as stream:
+                assert [json.loads(line)["id"] for line in stream] == [2, 3, 4, 5]
+            with pytest.raises(ValueError, match="limit"):
+                await export_jsonl(
+                    config,
+                    definition,
+                    {"minimum": 1},
+                    tmp_path / "limit.gz",
+                    ExportSettings(max_rows=1),
+                )
+            with pytest.raises(asyncpg.ReadOnlySQLTransactionError):
+                await export_jsonl(
+                    config,
+                    {"sql": f'SELECT "{schema}".write_row()'},
+                    {},
+                    tmp_path / "write.gz",
+                    limits,
                 )
         finally:
             if created:

@@ -16,6 +16,7 @@ trolley.yaml
 *.db
 *.sqlite
 *.sqlite3
+trolley-exports/
 
 # Editors / OS
 .DS_Store
