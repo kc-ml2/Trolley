@@ -23,7 +23,7 @@ def test_export_ownership_download_expiry_and_revocation(tmp_path, monkeypatch):
     )
 
     async def write_export(configuration, definition, arguments, path, limits):
-        assert arguments == {"email": "root@example.com"}
+        assert arguments == {"trolley_caller_email": "root@example.com"}
         with gzip.open(path, "wb") as f:
             f.write(b'{"id":1}\n')
         return 1, 9, path.stat().st_size
@@ -44,17 +44,20 @@ def test_export_ownership_download_expiry_and_revocation(tmp_path, monkeypatch):
                 "report",
                 "db",
                 {
-                    "sql": "select $1",
-                    "parameters": ["email"],
-                    "bindings": {"email": "authenticated_user.email"},
-                    "export": True,
+                    "data_scope": "caller",
+                    "source": {"schema": "public", "relation": "logs"},
+                    "columns": ["id"],
+                    "ownership": {"column": "email", "identity": "authenticated_user.email"},
+                    "output": "file",
                 },
             )
             with pytest.raises(ValueError, match="Server-bound"):
-                await manager.start("report", {"email": "other@example.com"}, context)
+                await manager.start(
+                    "report", {"trolley_caller_email": "other@example.com"}, context
+                )
             started = await manager.start("report", {}, context)
             await asyncio.gather(*list(manager.tasks))
-            job = await manager.get(started["export_id"], context)
+            job = await manager.get(started["execution_id"], context)
             assert job.status == "succeeded"
             assert not hasattr(job, "result")
             return secret, other_secret, str(job.id), context
@@ -91,11 +94,11 @@ def test_export_ownership_download_expiry_and_revocation(tmp_path, monkeypatch):
             writer.side_effect = ValueError("sensitive source record")
             started = await manager.start("report", {}, context)
             await asyncio.gather(*list(manager.tasks))
-            job = await manager.get(started["export_id"], context)
+            job = await manager.get(started["execution_id"], context)
             assert job.status == "failed"
             assert not manager.path(job).exists()
-            await update_operation("report", definition={"sql": "select 1"})
-            with pytest.raises(ValueError, match="export-enabled"):
+            await update_operation("report", definition={"data_scope": "shared", "sql": "select 1"})
+            with pytest.raises(ValueError, match="file output"):
                 await manager.start("report", {}, context)
 
         client.portal.call(failure)

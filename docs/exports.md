@@ -1,32 +1,47 @@
-# Export approved Operations
+# Download query results
 
-Administrators enable exports on an Operation with `definition.export: true`.
-The existing SQL, input schema, access policy, and server email bindings still apply.
-No arbitrary SQL is accepted from the caller. Ordinary `execute` limits remain intact.
+[← README](../README.md) · [Usage guide](guide.md)
 
-Example definition (adapt tables and columns to the actual schema):
+Administrators create file-output Operations such as `get_my_weekly_data` to deliver
+approved query results as a **JSONL.gz file**. Calling that Operation generates a file;
+callers do not select an export option. The output mode is fixed by the administrator.
+Large inline queries never automatically switch to file output.
 
-```json
-{
-  "sql": "SELECT request_id, started_at, CASE WHEN $4::boolean THEN messages ELSE NULL END AS messages, CASE WHEN $4::boolean THEN response ELSE NULL END AS response FROM logs WHERE owner_email = $1 AND started_at >= $2::text::timestamp AND started_at < $3::text::timestamp ORDER BY started_at, request_id",
-  "parameters": ["caller_email", "start_time", "end_time", "include_content"],
-  "bindings": {"caller_email": "authenticated_user.email"},
-  "fetch": true,
-  "export": true
-}
-```
+## Get a file
 
-Define required public inputs `start_time`, `end_time` (strings) and `include_content`
-(boolean) in `input_schema`; do not expose `caller_email`. Set `access` explicitly,
-preferably `restricted`. Review the ownership relationship and omit API key columns,
-HTTP headers, and other secrets. Content may itself contain secrets: export does not
-redact them. User agreement on scope/content must precede the export call.
+1. Ask your agent to find a file-output Operation and confirm the date range and
+   whether sensitive content is needed (`list_operations` includes `output`).
+2. It calls the Operation directly, or `execute(name, arguments)`. The response contains
+   `output: "file"`, `execution_id`, and `status`. Poll `get_execution(execution_id)`;
+   do not invoke the Operation again just to check progress.
+3. When status is `succeeded`, download the returned URL with a trusted local client
+   using your active Bearer key in the Authorization header. A browser link alone is
+   insufficient. Never put keys in URLs or chat.
 
-1. Call `start_export(name, arguments)` with fixed start/end times and content choice.
-2. Poll `get_my_export(export_id)` for `running`, `succeeded`, `failed`, or `expired`.
-3. Download the returned URL using the owner's active Bearer key in the Authorization
-   header, never in a query string. A browser link alone is insufficient. Use a trusted
-   local client with credentials configured privately; do not paste keys into chat.
+Statuses are `running`, `succeeded`, `failed`, and `expired`. Only the owner can access
+a job—even administrators cannot download another user's export. Current access and
+unchanged query/binding checks still apply. Revocation blocks subsequent downloads,
+not an already-running query or streaming response.
+
+## Create a file Operation as an administrator
+
+Set `definition.output: "file"` when creating a purpose-specific Operation, for example
+`get_my_weekly_data`. The default is `"inline"`. SQL, input schema, permissions, and
+caller bindings still apply; file output does not add row filters or accept arbitrary
+caller SQL. Both the named tool and `execute` start file generation. File Operations
+require `fetch: true` and cannot configure pagination. If you also need inline results,
+publish a separate inline Operation. Only administrators can create/change output modes.
+Use complete replacement definitions with `update_operation`. The old `export` boolean
+is rejected; there are no `start_export` or `get_my_export` system tools.
+
+For a personal file such as `get_my_weekly_data`, use `data_scope: "caller"` and
+`output: "file"` with a structured source, ownership column, projected columns,
+and optional date filters. See the complete [personal data example](caller-data.md).
+Do not expose email as an input. Shared file Operations instead explicitly declare
+`data_scope: "shared"` and administrator-approved SQL/parameters.
+
+Review source ownership and omit secret-bearing columns. Confirm scope/content
+before invocation; file generation does not redact sensitive records.
 
 The gzip file contains one JSON object per row. Dates/decimals use the same conversion
 as normal Operation results. The file is only downloadable after successful completion;
@@ -34,11 +49,6 @@ a limit failure never yields a successful partial export. There is no row pagina
 or continuation cursor: a read-only repeatable-read transaction streams the entire query
 from one database snapshot. SQL LIMIT/OFFSET clauses still apply if the administrator
 puts them in the query. JSONL line order follows the query; add ORDER BY when needed.
-
-Download and status checks enforce job ownership, current key/user activation, current
-Operation access, and unchanged definition/schema/caller binding fingerprint. Admins
-cannot download other users' jobs. Revocation does not interrupt an already streaming
-HTTP response or an already running query, but subsequent downloads are denied.
 
 ## Operator configuration
 

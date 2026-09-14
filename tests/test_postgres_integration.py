@@ -39,6 +39,7 @@ def test_real_postgresql_pagination(tmp_path):
             )
             config = {"url": url}
             definition = {
+                "data_scope": "shared",
                 "sql": (
                     f'SELECT id, payload FROM "{schema}".logs WHERE id >= $1; -- trailing comment'
                 ),
@@ -81,7 +82,10 @@ def test_real_postgresql_pagination(tmp_path):
                 "SELECT 1 AS id, $$a;--b$$ AS value; -- last",
             ]:
                 result = await execute(
-                    config, {"sql": sql, "pagination": {"order_by": ["id"]}}, {}, page_size=1
+                    config,
+                    {"data_scope": "shared", "sql": sql, "pagination": {"order_by": ["id"]}},
+                    {},
+                    page_size=1,
                 )
                 assert result["rows"][0]["id"] == 1
 
@@ -93,6 +97,7 @@ def test_real_postgresql_pagination(tmp_path):
                 await execute(
                     config,
                     {
+                        "data_scope": "shared",
                         "sql": f'SELECT "{schema}".write_row() AS id',
                         "pagination": {"order_by": ["id"]},
                     },
@@ -105,11 +110,16 @@ def test_real_postgresql_pagination(tmp_path):
             with pytest.raises(ValueError, match="timed out"):
                 await execute(
                     {**config, "query_timeout": 0.05},
-                    {"sql": "SELECT pg_sleep(2), 1 AS id", "pagination": {"order_by": ["id"]}},
+                    {
+                        "data_scope": "shared",
+                        "sql": "SELECT pg_sleep(2), 1 AS id",
+                        "pagination": {"order_by": ["id"]},
+                    },
                     {},
                     page_size=1,
                 )
             definition = {
+                "data_scope": "shared",
                 "sql": f'SELECT id, payload FROM "{schema}".logs WHERE id >= $1 ORDER BY id',
                 "parameters": ["minimum"],
             }
@@ -130,7 +140,7 @@ def test_real_postgresql_pagination(tmp_path):
             with pytest.raises(asyncpg.ReadOnlySQLTransactionError):
                 await export_jsonl(
                     config,
-                    {"sql": f'SELECT "{schema}".write_row()'},
+                    {"data_scope": "shared", "sql": f'SELECT "{schema}".write_row()'},
                     {},
                     tmp_path / "write.gz",
                     limits,

@@ -26,7 +26,11 @@ def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None
             await create_operation(
                 "find_customer",
                 "customers",
-                {"sql": "select id from customers where id = $1", "parameters": ["id"]},
+                {
+                    "data_scope": "shared",
+                    "sql": "select id from customers where id = $1",
+                    "parameters": ["id"],
+                },
                 input_schema={
                     "type": "object",
                     "properties": {"id": {"type": "integer"}},

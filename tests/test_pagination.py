@@ -36,6 +36,7 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
                 "logs",
                 "db",
                 {
+                    "data_scope": "shared",
                     "sql": "select id from logs where kind = $1",
                     "parameters": ["kind"],
                     "pagination": {"order_by": ["id"]},
@@ -101,7 +102,7 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
             assert connector.await_args_list[1].kwargs == {"offset": 2, "page_size": 2}
 
             with pytest.raises(ValueError, match="does not support"):
-                await create_operation("single", "db", {"sql": "select 1"})
+                await create_operation("single", "db", {"data_scope": "shared", "sql": "select 1"})
                 await execute_operation("single", {}, context, page_size=10)
 
             await groups.create_group("readers")
@@ -125,6 +126,7 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
             await update_operation(
                 "logs",
                 definition={
+                    "data_scope": "shared",
                     "sql": "select id from logs where kind = $1 and id > 0",
                     "parameters": ["kind"],
                     "pagination": {"order_by": ["id"]},
@@ -148,9 +150,14 @@ def test_pagination_definition_validation(tmp_path):
 
         async def scenario():
             invalid = [
-                {"sql": "select 1", "pagination": {"order_by": []}},
-                {"sql": "select 1", "pagination": {"order_by": ["bad-name"]}},
+                {"data_scope": "shared", "sql": "select 1", "pagination": {"order_by": []}},
                 {
+                    "data_scope": "shared",
+                    "sql": "select 1",
+                    "pagination": {"order_by": ["bad-name"]},
+                },
+                {
+                    "data_scope": "shared",
                     "sql": "delete from logs",
                     "fetch": False,
                     "pagination": {"order_by": ["id"]},

@@ -1,504 +1,285 @@
-# Trolley detailed guide
+# Trolley guide
 
-[← Back to README](../README.md)
+[← README](../README.md) · [File exports](exports.md)
 
-Configuration, administration, SQL examples, and operational reference.
+## Developer exploration
 
-Trolley lets people and agents use approved PostgreSQL operations as MCP Tools,
-without receiving database credentials or SQL definitions.
+Administrators publish Operations; developers do not. To enable ad-hoc exploration:
 
-An administrator creates a Tool once, shares it with a group, and invites people
-to that group. Members can discover and run the group's Tools immediately.
+1. Create an account with `create_user(role="developer", ...)`, or assign an existing
+   non-admin account using `set_user_role(email=..., role="developer")`.
+2. Grant a configured Target with `set_target_access(name=..., email=..., allowed=true)`.
+   For a group, use `group_name` instead of `email`. Only developer members gain
+   exploration access. Use `allowed=false` to revoke the grant.
+3. Reconnect the developer client after changing its role. Use `list_targets`,
+   `get_target_schema(name=...)`, then `query_target(name=..., sql=..., params=[...])`.
+   Bind SQL values with PostgreSQL `$1`, `$2`, … placeholders.
 
-```text
-Configure a database → Create an Operation → Grant it to a group → Invite users
-```
+Queries run read-only, obey Target timeouts/result limits, and create audit records,
+not Operations. Direct-query pagination/export is not available. Only administrators
+can create, update, disable, or share Operations. Ordinary users continue to execute
+Operations without needing Target grants.
 
-## Who uses Trolley?
+Configure restricted database credentials: all developers using a Target share its
+DB privileges. There is no automatic caller-specific filtering for free SQL. Query
+SQL is recorded and may contain sensitive literals; protect the catalog.
 
-| Who | What they do |
-|---|---|
-| Server operator | Installs Trolley, configures PostgreSQL connections, and protects credentials |
-| Administrator | Creates Tools, manages groups, invites users, and assigns access |
-| User or agent | Discovers and runs allowed Tools, or requests a missing Tool |
-
-### Terms used in this guide
-
-- **Target**: a PostgreSQL database configured by the server operator.
-- **Operation**: a saved SQL statement, input schema, and access policy, exposed as a Tool.
-- **Group**: a collection of users who receive a shared set of Operation grants.
-- **Grant**: permission given to a group or an individual to use an Operation.
-- **Execution**: a record of an Operation invocation and its outcome.
-
-Trolley controls who can run an Operation, not which rows each group sees inside
-that Operation. Use separate Operations or database-side policies for data isolation.
-Administrators are trusted to approve SQL; Trolley does not certify SQL as safe.
-The Target's PostgreSQL account remains the final security boundary. Use a read-only
-account or read replica for reporting Tools.
+[Role and Target access details](target-query-design.md)
 
 ## 1. Install and start Trolley
 
-Python 3.11 or newer is required. Run the commands in this guide from the repository
-root. Start with [trolley.example.yaml](../trolley.example.yaml) for configuration.
+Follow the [README setup](../README.md#run-your-own-server). Configuration starts from
+[trolley.example.yaml](../trolley.example.yaml); keep `trolley.yaml` private.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-cp trolley.example.yaml trolley.yaml
-```
+| Setting | Purpose |
+|---|---|
+| `server.public_base_url` | Public links, not the bind address; CLI listens on `0.0.0.0:8000` |
+| `catalog.database_url` | Trolley accounts, permissions, Operations, and history |
+| `admins.emails` | Emails eligible for administrator access |
+| `targets` | PostgreSQL connections; credentials are managed only by the server operator |
+| `smtp` | Optional invitation email delivery |
+| `exports` | Optional file export limits; see [exports](exports.md) |
 
-Edit `trolley.yaml`:
-
-```yaml
-server:
-  public_base_url: http://localhost:8000
-catalog:
-  database_url: sqlite://./trolley.db
-admins:
-  emails:
-    - admin@example.com
-targets:
-  payments-db:
-    kind: postgresql
-    url: postgresql://reporting:password@127.0.0.1:5432/payments
-    timeout: 10
-    query_timeout: 30
-    max_rows: 1000
-    max_result_bytes: 1000000
-```
-
-`admins.emails` is required and lists identities eligible for administrator access.
-Keep this file private: it contains credentials. Never commit it to Git.
-Use `TROLLEY_CONFIG_FILE=/etc/trolley/trolley.yaml` to select another file.
-
-Check the Target and start the server:
+Use `TROLLEY_CONFIG_FILE=/etc/trolley/trolley.yaml` for another configuration path.
+Run CLI commands with the same configuration and working directory as the server,
+especially when catalog or export paths are relative.
 
 ```bash
 trolley target list
 trolley target check
 trolley target test payments-db
-trolley
 ```
 
-With SMTP configured, email initial access to one or more administrators listed in
-`admins.emails`:
-
-```bash
-trolley setup admin@example.com other-admin@example.com
-```
-
-This sends an API key and onboarding link to each recipient without printing the
-secret. Each run issues new keys; existing keys remain valid. Recipients are processed
-independently: if a later invitation fails, earlier successful invitations remain valid.
-The command uses your existing configuration and catalog; it does not install a service
-or modify `admins.emails`. Use the same configuration path and working directory as the
-server, especially when the catalog path is relative.
-
-Without SMTP, in another terminal, issue the first administrator's key:
-
-```bash
-trolley admin issue-key admin@example.com --name local-admin
-```
-
-The key is printed once. Store it in your MCP client's secret settings, not in an
-agent conversation. Trolley stores API key hashes, not recoverable secrets.
-
-The CLI listens on `0.0.0.0:8000`. `server.public_base_url` controls public links,
-not the bind address or port. For remote access, put Trolley behind HTTPS and
-appropriate network access controls; do not send Bearer tokens over public HTTP.
+With SMTP configured, `trolley setup admin@example.com` emails initial administrator
+access. Every run creates a new key; existing keys remain valid. Multiple recipients
+are processed independently. Setup does not install a service or edit the allowlist.
+Without SMTP, use `trolley admin issue-key admin@example.com --name initial-admin`.
 
 ## 2. Connect your MCP client
 
-Trolley serves an agent-readable connection guide at `/onboarding.md`. An invitation
-email includes this URL and your API key. You do not need to give the key to your agent.
+Give your agent the `/onboarding.md` URL from your invitation. Enter the API key yourself
+in the client's secret settings—never in chat. Reconnect, then ask:
 
-### Follow the onboarding guide
+> Trolley, what can you do for me right now?
 
-1. **Receive an invitation.** An administrator sends your API key and onboarding URL
-   by email. Use the URL from your invitation, not the example hostname below.
-2. **Give the onboarding URL to your agent.** Ask:
+The agent calls `get_my_capabilities` for your role, available system tools, and next
+steps. `list_operations` lists accessible saved database Operations, not built-in
+administrator tools; an empty list does not mean you lack admin access.
 
-   > Read this page and help me connect to Trolley:
-   > https://trolley.example.com/onboarding.md
-   > I'll enter my API key directly in the client's settings when needed.
-
-   The agent can read the guide and help prepare the MCP settings. Depending on your
-   client, you may need to add the server manually.
-3. **Enter your API key yourself.** Use your MCP client's secret or authentication
-   settings, or the `TROLLEY_API_KEY` environment variable if your client supports it.
-   **Do not paste the key into the agent conversation.**
-4. **Connect your MCP client.** Save the settings, then reconnect or restart if needed.
-5. **Discover what you can do.** Ask:
-
-   > Trolley, what can you do for me right now?
-   > Explain my available capabilities and help me get started.
-
-   The agent should first call `get_my_capabilities` to learn your effective role,
-   actually available system tools, and suggested next steps. Administrators can start
-   with `list_targets`, inspect a database using `get_target_schema`, and create an
-   Operation. Regular users can discover, run, or request Operations.
-   `list_operations` lists saved database Operations, not built-in system tools; an
-   empty list does not mean you lack administrator access.
-   Then ask the agent to perform an available task, such as
-   "Show me the revenue for August 2026" if a revenue reporting Tool is available.
-   If no suitable Tool exists, the agent can ask for your approval before submitting
-   a request to an administrator with `request_operation`.
-
-```text
-Receive invitation → Share onboarding URL → Enter key privately
-→ Connect MCP client → Ask the agent to do a task
-```
-
-### Connect manually
-
-For a local server, the onboarding guide is at `http://localhost:8000/onboarding.md`.
-A typical client configuration is:
+For manual setup, adapt this to your client's secret-management mechanism:
 
 ```json
 {
   "mcpServers": {
     "trolley": {
-      "url": "http://localhost:8000/mcp/",
-      "headers": {
-        "Authorization": "Bearer <enter-your-key-in-client-secret-settings>"
-      }
+      "url": "https://trolley.example.com/mcp/",
+      "headers": {"Authorization": "Bearer <key-entered-privately>"}
     }
   }
 }
 ```
 
-Adapt this to your client's secret-management mechanism. Do not paste a real key
-into a prompt or commit it to a configuration repository.
-
-After connecting, use the discovery prompt above. To run an Operation, the client
-can call the named Tool or
-`execute` with the Operation name and inputs. Refresh discovery when permissions
-or Tools change; a client's cached Tool list can be stale.
+Use your server's URL. Environment-variable substitution depends on the client.
+Refresh discovery when Tools or permissions change.
 
 ## 3. Create a Tool and share it with a group
 
-The following calls require an administrator connection. No code generation or
-server restart is needed.
+A **Target** is a configured database. An **Operation** is approved SQL, inputs, and an
+access policy exposed as a Tool. A **grant** gives a user or group permission to run it.
 
-### Find the database and inspect its tables
+As an administrator:
 
-Call `list_targets`, then `get_target_schema`:
-
-```json
-{"name": "payments-db"}
-```
-
-Schema discovery returns the live schema in one response. Use the actual table
-and column names from your database; the `payments` table below is an example.
-Target credentials cannot be viewed or changed through these management Tools.
-
-### Create a restricted Operation
-
-Call `create_operation`:
+1. Call `list_targets`, then `get_target_schema({"name": "payments-db"})`.
+2. Review SQL against the actual schema. Schema discovery returns the live schema in
+   one response; it does not paginate it.
+3. Call `create_operation` (example table/columns below):
 
 ```json
 {
   "name": "monthly_revenue",
   "target_name": "payments-db",
-  "description": "Return revenue for a calendar month",
+  "description": "Revenue for a calendar month",
   "access": "restricted",
   "definition": {
-    "sql": "select coalesce(sum(amount), 0) as revenue from payments where paid_at >= $1::text::date and paid_at < ($1::text::date + interval '1 month')",
+    "data_scope": "shared",
+  "sql": "SELECT coalesce(sum(amount), 0) AS revenue FROM payments WHERE paid_at >= $1::text::date AND paid_at < ($1::text::date + interval '1 month')",
     "parameters": ["month"],
     "fetch": true
   },
   "input_schema": {
     "type": "object",
-    "properties": {
-      "month": {"type": "string", "pattern": "^\\d{4}-\\d{2}-01$"}
-    },
+    "properties": {"month": {"type": "string", "pattern": "^\\d{4}-\\d{2}-01$"}},
     "required": ["month"],
     "additionalProperties": false
   }
 }
 ```
 
-`parameters` maps inputs to PostgreSQL placeholders in order; its names must match
-`input_schema.required` plus any server-bound parameter names in `bindings`. Date inputs arrive as strings, so the example casts through
-`text`. `fetch: true` returns rows; `fetch: false` returns a PostgreSQL command status.
-Use single statements suitable for a transaction.
+`parameters` maps inputs to `$1`, `$2`, etc. Names must match schema-required inputs
+for shared SQL Operations. Caller Operations use [structured ownership](#caller-specific-operations). Dates arrive as strings;
+cast through `text`. Use a single statement suitable for a transaction.
+`fetch: true` returns rows; `fetch: false` returns a command status.
 
-**Set `access` explicitly.** The current default is `public`, which makes the Tool
-available to ordinary users in `standard` mode. A group grant does not make a public
-Operation private.
+4. `create_group({"name": "finance", "description": "Finance team"})`
+5. `grant_group_operation({"group_name": "finance", "operation_name": "monthly_revenue"})`
+6. `invite_user({"email": "analyst@example.com", "name": "Analyst", "group_names": ["finance"]})`
 
-### Create the group and assign the Tool
+Groups must exist before invitation. Reinviting adds groups without removing existing
+memberships. Allowlisted emails receive admin access on successful invitation; others
+receive user access. The new key stays inactive until delivery and finalization succeed.
+A failed invitation may leave an inactive key and user record, but does not apply new
+role/group privileges. Retry after fixing the failure.
 
-Call `create_group`:
+Without SMTP, use `create_user` with `group_names`, then `create_api_key`. The latter
+returns the secret to the calling client once: use a trusted administrator client and
+secure delivery channel. `invite_user` does not return the secret through MCP.
 
-```json
-{"name": "finance", "description": "Finance team"}
-```
-
-Call `grant_group_operation`:
-
-```json
-{"group_name": "finance", "operation_name": "monthly_revenue"}
-```
-
-### Invite a member
-
-With SMTP configured, call `invite_user`:
-
-```json
-{
-  "email": "analyst@example.com",
-  "name": "Analyst",
-  "group_names": ["finance"]
-}
-```
-
-The user receives an API key and onboarding link by email. The key is not returned
-to the agent. Groups must already exist. Reinviting a user adds the requested groups
-without removing existing memberships.
-
-Emails in `admins.emails` receive the admin role on successful invitation. Other
-emails receive the user role. Until delivery and database finalization succeed,
-the new key is inactive and no new role or group privileges are applied. If an
-invitation fails after delivery, the emailed key remains inactive; retry the invitation.
-A failed attempt may leave a user record and an inactive key, but does not revoke
-existing keys or memberships.
-
-Without SMTP, use `create_user` with `email`, `name`, and `group_names`, then
-`create_api_key` with `email` and `name`. The latter returns a secret once; deliver it
-through a secure channel. Unlike `invite_user`, this response exposes the secret to
-the calling client, so use a trusted administrator client.
-
-### Run the Tool
-
-The invited user can now ask:
-
-> Get revenue for August 2026.
-
-Or call `execute`:
+The member can now call the named Tool or `execute`:
 
 ```json
 {"name": "monthly_revenue", "arguments": {"month": "2026-08-01"}}
 ```
 
-Every read response has the same result shape. This aggregate Operation returns one
-page with `has_more: false`:
-
-```json
-{"rows": [{"revenue": "1234.50"}], "has_more": false, "next_cursor": null}
-```
-
-List Operations can opt into pagination with `definition.pagination`, as shown in the
-large-log example below. A named dynamic Tool returns the first page; use `execute` to
-choose a page size or continue subsequent pages. The default page size is 100, or the
-Target's `max_rows` if smaller. After creating the paginated `request_logs` Operation
-shown below, request the first page without a cursor:
-
-```json
-{
-  "name": "request_logs",
-  "arguments": {
-    "start_time": "2026-08-01T00:00:00Z",
-    "end_time": "2026-09-01T00:00:00Z"
-  },
-  "page_size": 100
-}
-```
-
-A paginated response can look like this:
-
-```json
-{"rows": [{"request_id": "example-id"}], "has_more": true, "next_cursor": "opaque-cursor"}
-```
-
-When `has_more` is true, call `execute` again with the same Operation name,
-`arguments`, and `page_size`, adding the returned cursor:
-
-```json
-{
-  "name": "request_logs",
-  "arguments": {
-    "start_time": "2026-08-01T00:00:00Z",
-    "end_time": "2026-09-01T00:00:00Z"
-  },
-  "page_size": 100,
-  "cursor": "opaque-cursor"
-}
-```
-
-Do not alter or interpret the cursor. It is bound to the caller, Operation, arguments,
-and page size, and expires 15 minutes after the first page. Continue only when the user
-needs more rows. Do not describe a partial page as the complete result.
-
 ## Managing access
-
-User roles and Operation visibility are separate:
 
 | Operation access | Who can run it |
 |---|---|
-| `admin` | Administrators only; grants never override this |
-| `restricted` | Administrators plus users granted access individually or through a group |
-| `public` | Administrators and signed-in users in `standard` mode, plus explicitly granted users |
+| `admin` | Administrators only; grants cannot override this |
+| `restricted` | Administrators plus individual/group grant recipients |
+| `public` | Administrators, standard signed-in users, and explicit grant recipients |
 
-The legacy value `user` means `public` and remains supported for existing catalogs
-and clients. `public` never means unauthenticated access. Restricted Operations
-with no grants remain admin-only.
+**Set access explicitly:** the default is `public`. Granting a public Operation to a
+group does not make it private. Legacy `user` means `public`; unauthenticated access
+is never allowed. Restricted Operations with zero grants remain admin-only.
 
-A user can belong to multiple groups. Effective access combines all group grants
-and individual grants. Removing one grant does not remove access provided elsewhere.
-Inactive Operations or Targets cannot be executed, including by administrators.
-
-To restrict a user to assigned Tools only, call `update_user_access`:
+User access defaults to `standard`. To exclude automatic public access:
 
 ```json
 {"email": "analyst@example.com", "operation_access": "assigned_only"}
 ```
 
-`assigned_only` includes group and individual grants, but excludes automatic public
-access. The default user access mode is `standard`.
-
-### Common administration tasks
+Pass this to `update_user_access`. Assigned-only users still receive both individual
+and group grants. Multiple grants are additive: removing one does not revoke access
+provided elsewhere. Groups control Tool access, **not row isolation**.
 
 | Task | Tool |
 |---|---|
-| List groups / change a description | `list_groups` / `update_group` |
-| Replace a user's complete group membership | `set_user_groups(email, group_names)` |
-| Remove all group membership | `set_user_groups` with `group_names: []` |
-| Inspect memberships | `list_group_memberships` (optional `email`, `group_name`) |
-| Grant / revoke a group's Tool | `grant_group_operation` / `revoke_group_operation` |
-| Inspect group grants | `list_group_operation_grants` (optional `group_name`, `operation_name`) |
-| Give / remove an individual exception | `grant_operation` / `revoke_operation` |
+| Create/list/edit/delete a group | `create_group`, `list_groups`, `update_group`, `delete_group` |
+| Replace all user memberships | `set_user_groups(email, group_names)`; `[]` removes all |
+| Inspect memberships | `list_group_memberships(email?, group_name?)` |
+| Grant/revoke a group's Tool | `grant_group_operation`, `revoke_group_operation` |
+| Inspect group grants | `list_group_operation_grants(group_name?, operation_name?)` |
+| Grant/revoke an individual exception | `grant_operation`, `revoke_operation` |
 | Inspect individual grants | `list_operation_grants` |
-| Delete a group and its memberships/grants | `delete_group` (users and Operations are retained) |
-| List users / keys | `list_users` / `list_api_keys` |
+| List users/keys | `list_users`, `list_api_keys` |
 
-All these management Tools require admin access. Changes affect subsequent discovery
-and execution without reissuing API keys; they do not cancel already-running queries.
-Administrator access requires both a stored admin role and inclusion in `admins.emails`.
-Removing an email from that file removes admin eligibility after server restart.
+Management Tools are admin-only. Deleting a group retains its users and Operations.
+Changes affect subsequent requests, not already-running queries. Inactive Operations
+or Targets cannot be executed even by admins. Admin access requires both a stored
+admin role and inclusion in `admins.emails`; file changes require restart.
 
 ## Fixing or retiring a Tool
 
-Use `update_operation` with its `name` and the fields to change: `description`,
-`definition`, `input_schema`, or `access`. Supply the complete replacement definition
-or schema, not a partial nested patch. The Tool is reloaded immediately.
+`update_operation` accepts `name` and changed `description`, `definition`, `input_schema`,
+or `access`. Definitions/schemas are complete replacements, not nested patches.
+Updates reload the Tool immediately and **reactivate disabled Operations**.
 
-Use `disable_operation` to hide a Tool and prevent further execution while preserving
-its definition, grants, and history. **Updating a disabled Operation reactivates it.**
-There is no hard-delete Tool. Names and Targets cannot be changed by update; create
-a replacement Operation and disable the old one if either needs to change.
+`disable_operation` hides the Tool and blocks new execution while preserving grants and
+history. There is no hard-delete Tool. To change a name or Target, create a replacement
+and disable the old Operation. Tool definitions refresh automatically on startup and
+on creation, update, or disable. Clients may need to refresh their cached lists.
+There is no manual reload tool or built-in Operation request workflow. Contact an
+administrator outside Trolley if a needed Tool is missing.
 
-`reload_tools` refreshes active Tool definitions from the catalog, including existing
-Tools' descriptions and schemas. Clients may still need to refresh their Tool lists.
-
-## Requesting a missing Tool
-
-Users should check `list_operations` first, then confirm before calling
-`request_operation` with a title, description, and reason. Do not include credentials,
-private prompts, or sensitive records in the request.
-
-- Users check progress with `list_my_operation_requests`.
-- Administrators review with `list_operation_requests`.
-- Administrators use `resolve_operation_request` to mark a request `fulfilled` and
-  link an Operation, or `rejected` with a note.
-
-Creating or fulfilling a request does not itself grant access: the administrator
-must also assign the resulting Operation when it is restricted.
+Personal-data Operations must bind the authenticated caller's email on the server and
+use it in the SQL row filter. Do not expose a target person's email as a public input.
+Administrators can use `query_target` for cross-user investigation.
 
 ## Query results and large logs
 
-Per-Target limits are controlled by the server operator, not Tool callers:
+| Need | Use |
+|---|---|
+| Aggregate or single result | `execute` or the named Tool |
+| Explore a list | Pagination-enabled Operation via `execute` |
+| Download approved query results | Call a [file-output Operation](exports.md); poll `get_execution` |
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `timeout` | 30 seconds for Operation connections | Connection timeout |
-| `query_timeout` | 30 seconds | Execution transaction timeout |
-| `max_rows` | 1000 | Maximum rows returned |
-| `max_result_bytes` | 1000000 | Conservative serialized-result byte budget |
+Reads return `result: {"rows": [...], "has_more": false, "next_cursor": null}` inside
+an execution response. Dates use ISO strings and decimals use strings without rounding;
+UUIDs are strings and binary values use `{"base64": "..."}`. Cast unsupported database
+types to text. Writes return a command status instead of pages.
 
-Paginated Operations return `has_more` and a cursor when a page reaches its requested
-size or byte budget. A single row larger than the byte budget fails. Non-paginated
-Operations fail rather than silently returning an incomplete report when they exceed a
-limit. Queries run in a transaction; ordinary database changes roll back on failures.
-This does not undo external side effects or guarantee the outcome of a timed-out commit.
-Rows are read incrementally, but a single oversized field still has to be received
-before its serialized size can be checked. Limits are not a complete memory sandbox.
+### Pagination
 
-For logs, create a Tool with a date range and a pagination definition such as:
+For a list query, set its definition's `pagination`:
 
 ```json
 {
-  "sql": "select request_id, start_time, model, status from request_logs where start_time >= $1::text::timestamptz and start_time < $2::text::timestamptz",
+  "data_scope": "shared",
+  "sql": "SELECT request_id, start_time, model FROM request_logs WHERE start_time >= $1::text::timestamptz AND start_time < $2::text::timestamptz",
   "parameters": ["start_time", "end_time"],
-  "fetch": true,
   "pagination": {"order_by": ["start_time", "request_id"]}
 }
 ```
 
-The order names must be unique output-column identifiers; include a unique final column
-to break ties. Trolley wraps the SQL and applies that order and page bounds. Trolley currently
-uses offset continuation, so inserts or deletes before the next offset can still cause
-duplicates or omissions. Cursors provide continuation and validation, not snapshot
-isolation. Select necessary columns; do not expose key secrets
-or raw prompts by default. Use a database export/ETL process for full backups instead
-of returning the entire log through MCP.
-
-Result dates/times use ISO strings, decimal amounts use strings to preserve precision,
-UUIDs use strings, and binary values use `{"base64": "..."}`. Intervals use day/second/
-microsecond components; non-finite floats use strings. Unsupported result types fail
-with an explicit error; cast unusual PostgreSQL types to text in your SQL.
-
-Execution arguments, results, and errors are saved in the catalog. This may duplicate
-sensitive data. Protect and back up the catalog; automatic redaction and history
-retention are not implemented. If a successful query returns `audit_warning`, it ran
-but its audit finalization failed: investigate server logs, **do not rerun the query**.
-Likewise, do not blindly retry writes after a timeout or lost connection.
-
-## Caller-specific Operations
-
-Administrators can ask their agent to create a shared Operation that filters data by
-its authenticated caller's email. No per-user Tool copies are needed. For example:
-
-> Our model keys have an email tag maintained by administrators. Inspect the schema
-> and create a my_usage Operation that joins those keys to usage logs and filters by
-> the authenticated Trolley user's email. Bind the email on the server, not as a client
-> input. Include all matching keys and return no rows when none match.
-
-The agent must inspect the actual schema and clarify the tag format and join rules;
-Trolley does not infer whether a tag is trustworthy. The administrator approves that
-mapping and the SQL. Arbitrary user-editable tags may not be suitable for authorization.
-
-For an illustrative table with an `owner_email` column, an Operation definition is:
+Also define required string inputs `start_time` and `end_time` in `input_schema`.
+Use actual output columns and a unique final ordering column to break ties. Paginated
+queries run read-only. The first page via `execute` omits `cursor`:
 
 ```json
 {
-  "sql": "SELECT id, total_tokens FROM usage_logs WHERE owner_email = $1 AND day >= $2::text::date",
-  "parameters": ["caller_email", "start_date"],
-  "bindings": {"caller_email": "authenticated_user.email"},
-  "fetch": true
+  "name": "request_logs",
+  "arguments": {"start_time": "2026-08-01T00:00:00Z", "end_time": "2026-09-01T00:00:00Z"},
+  "page_size": 100
 }
 ```
 
-Its public `input_schema` contains only `start_date`, with `required: ["start_date"]`.
-Bound parameters must not appear in the schema's properties or required list. The
-only supported binding source is currently `authenticated_user.email`.
+If `has_more` is true, repeat with unchanged arguments/page size and the returned
+`next_cursor` as `cursor`. The default size is `min(100, max_rows)`; named Tools return
+that first page. Cursors are caller/query-bound and expire 15 minutes after page one.
+Do not claim completeness while `has_more` is true or fetch beyond the user's scope.
 
-At execution time, Trolley reads the active caller's current catalog email and passes
-it through PostgreSQL parameter binding. Even administrators use their own email;
-there is no caller override. Client attempts to supply a bound parameter are rejected,
-including when the public schema permits additional properties. Both named Tools and
-`execute` use this same path. The resolved arguments are recorded in the execution
-audit and included in pagination fingerprints; an email change invalidates old cursors.
+Continuation uses offsets, **not a snapshot**: concurrent inserts/deletes can cause
+omissions or duplicates. Export uses a single snapshot instead; it is not automatically
+selected when a query becomes large.
 
-Bindings do not add filtering to SQL automatically. The approved query must use the
-parameter in the appropriate filter. API-key authentication identifies a Trolley
-account; it does not independently verify ownership of a database tag or email address.
-Existing Operations without bindings behave as before. No catalog migration is needed.
+### Limits and history
+
+Per-Target settings in `trolley.yaml`:
+
+| Setting | Default |
+|---|---|
+| `timeout` — connection | 30 seconds for Operation connections |
+| `query_timeout` — execution | 30 seconds |
+| `max_rows` — maximum page/result rows | 1000 |
+| `max_result_bytes` — serialized-result budget | 1000000 |
+
+Paginated reads stop at the page/byte budget with a continuation cursor. Non-paginated
+reads fail on overflow rather than returning a silent partial result. One oversized
+row fails and must still be received before its size can be checked. These limits are
+not a complete memory sandbox. For full database backups, use database backup tooling.
+
+Execution arguments/results/errors are stored in the catalog; pagination metadata is
+also recorded. Protect this potentially sensitive data. Automatic redaction and audit
+retention are not implemented. An `audit_warning` means the query succeeded but audit
+finalization failed: investigate logs, **do not rerun it**. Do not blindly retry writes
+after timeout or lost connection; commit outcome or external side effects may be unknown.
+
+## Caller-specific Operations
+
+Personal-data Operations must declare `data_scope: "caller"`, an ownership column,
+and a structured source/column/filter definition. The server resolves the API key's
+owning account email and generates a mandatory owner filter; users cannot provide
+or override it. Administrators invoking these Operations also see only their own
+rows. Cross-user investigation uses `query_target`.
+
+See [the personal data contract](caller-data.md) for complete definition/input-schema
+examples, key-sharing semantics, and the administrator's responsibility to review
+source ownership. Arbitrary SQL and legacy caller bindings are rejected in caller
+scope. Other Operations must explicitly declare `data_scope: "shared"`.
 
 ## Email configuration
 
-Add an SMTP section to `trolley.yaml`, for example for Google Workspace:
+Add to `trolley.yaml`, for example for Google Workspace:
 
 ```yaml
 smtp:
@@ -511,76 +292,52 @@ smtp:
   timeout: 10
 ```
 
-Use an App Password, not the account password. Omit SMTP to disable invitations by
-email. When configured, startup checks SMTP connectivity, TLS, authentication, and
-NOOP without sending mail; a failed check prevents startup.
+Use an App Password. Omit SMTP to disable email invitations. Configured SMTP is checked
+at startup (connection, TLS, authentication, NOOP); failure prevents startup.
 
 ## Troubleshooting
 
-| Symptom | What to check |
+| Symptom | Check |
 |---|---|
 | `401` | Missing, invalid, or inactive Bearer key |
-| Tool missing | Refresh `list_operations`; check active status, memberships, grants, and user access mode |
-| Permission denied | Ask an administrator to check the Operation access and effective grants |
-| Query timeout / result limit | Narrow the date range, paginate, or ask the operator to review limits |
-| Invitation failed | Check SMTP and server logs; retry for a new key after fixing the cause |
-| Generic Tool error | Check server logs; unexpected internal errors are not exposed to callers |
+| Tool missing | Refresh capabilities/Operations; check active state, grants, memberships, access mode |
+| Permission denied | Ask an admin to review effective access |
+| Query timeout/limit | Narrow the range, paginate, or request an enabled export |
+| Invitation failed | Fix SMTP/finalization error, then retry for a new key |
+| Generic Tool error | Server logs; unexpected internal errors are hidden from callers |
 
-Useful endpoints: `/health`, `/onboarding.md`, `/.well-known/trolley`, and `/mcp/`.
-Public onboarding and discovery endpoints do not issue keys.
+Endpoints: `/health`, `/onboarding.md`, `/.well-known/trolley`, `/mcp/`.
+Public onboarding/discovery does not issue keys. Use HTTPS for remote access.
 
 ## Backups and upgrades
 
-Keep both `trolley.yaml` (configuration and credentials) and `trolley.db` (users,
-hashed keys, groups, grants, Operations, requests, and execution history). Neither
-belongs in Git. Dynamic Tools are catalog data, not Python files or Git commits.
+Back up `trolley.yaml` and the catalog (`trolley.db` by default); keep both out of Git.
+Dynamic Tools are catalog data, not source files. Export files are sensitive temporary
+artifacts; see [export storage](exports.md#operator-configuration).
 
-Back up the catalog before upgrading. This release adds three group tables,
-`PageCursor` for expiring continuation tokens, and `ExecutionPage` for page audit
-context through existing startup schema generation. Existing Execution rows and
-access values are preserved: no columns are added to the existing Execution table.
-For each paginated execution, the page audit records offset, page size, input cursor,
-and query fingerprint; the returned cursor remains in the Execution result.
-If a development build already created pagination tables with a different schema,
-startup generation will not migrate those tables; plan an explicit migration before
-upgrading that catalog.
-Check for dynamic Operations whose names collide with new System Tools before an
-upgrade; recreate/disable conflicting Operations first. Restart with the new code.
-Do not delete an operational catalog to resolve a schema problem.
+Group, cursor, page-audit, and export-job tables are created at startup. Schema generation
+**does not migrate existing tables**. Back up before upgrading and explicitly migrate
+incompatible development schemas. Check dynamic Tool names against new reserved system
+names, then restart. Never delete an operational catalog to fix a schema error.
 
-Current limitations include no versioned migrations, automatic audit retention,
-API key revocation/user deactivation management Tools, or multi-process registry
-synchronization. Use a single server process and plan database migrations before
-production schema changes. Email OTP, OAuth onboarding, and scheduled jobs are not
-implemented.
+Use a single server process. Versioned migrations, automatic audit retention, key expiry,
+key-revocation/user-deactivation management Tools, multi-process registry synchronization,
+OAuth onboarding, and scheduled jobs are not implemented.
 
 ## Development
 
 ```bash
+pip install -e '.[dev]'
 pytest
 ruff check .
 ruff format --check .
 ```
 
-PostgreSQL integration tests are opt-in. Use a **disposable test database**, never an
-operational Target. The role needs schema/table/function creation privileges. Tests
-create and remove a uniquely named schema; no other schemas are modified.
+With Docker running, `./scripts/test-postgres-integration.sh` creates a disposable
+PostgreSQL container, runs integration tests, and removes it. To choose the Python
+interpreter: `PYTHON=venv/bin/python ./scripts/test-postgres-integration.sh`.
 
-If Docker is running, start an isolated PostgreSQL container, run the tests, and remove
-it automatically:
-
-```bash
-./scripts/test-postgres-integration.sh
-```
-
-Alternatively, provide an existing **disposable** PostgreSQL database explicitly:
-
-```bash
-TROLLEY_TEST_POSTGRES_URL=postgresql://test:test@127.0.0.1:5432/trolley_test \
-  pytest -q tests/test_postgres_integration.py
-```
-
-Without this variable, PostgreSQL integration tests are reported as skipped; the other
-tests use an isolated SQLite catalog and mocked PostgreSQL connections. Integration
-coverage includes real SQL wrapping/binding, page and byte boundaries, trailing SQL
-comments, read-only write rejection, and query timeout.
+Alternatively set `TROLLEY_TEST_POSTGRES_URL` and run
+`pytest tests/test_postgres_integration.py`. Use a disposable database, never an
+operational Target; tests create/drop a unique schema and need schema/function privileges.
+Without a test database, PostgreSQL tests are skipped; other tests use SQLite and mocks.

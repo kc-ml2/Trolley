@@ -1,180 +1,126 @@
 # Trolley
 
-**Turn approved database queries into tools your team can use through an AI client.**
+An MCP server for **developer SQL exploration** and **administrator-published data tools**.
+Connect your AI client; Trolley keeps database credentials on the server.
 
-With Trolley, an administrator creates a tool, shares it with a group, and invites
-people by email. Users can then ask their agent to run it—without receiving database
-credentials or writing SQL.
+| Role | What they can do |
+| --- | --- |
+| Administrator | Manage access, query Targets, create and share Operations |
+| Developer | Inspect/query explicitly granted Targets; run accessible Operations |
+| User | Run accessible Operations |
 
-For example, once the corresponding tools have been created:
+A **Target** is a database connection. An **Operation** is an administrator-created
+MCP tool, such as `get_my_weekly_data`. Exploring a Target does not create Operations.
 
-> Show me my LLM usage this month.
->
-> Get revenue for August 2026.
+## Quick start
 
-```text
-User → AI client → Trolley → Approved query → PostgreSQL
+Requires Docker with Compose. From this repository:
+
+```bash
+cp -n trolley.docker.example.yaml trolley.yaml
+# Edit admins.emails if needed. If trolley.yaml already exists, update it manually.
+docker compose up -d --build
+docker compose exec trolley trolley admin issue-key admin@example.com
 ```
 
-Trolley is an MCP server, not a chat application. Bring an MCP-compatible AI client;
-Trolley provides the tools and controls who can run them. It currently supports
-PostgreSQL databases.
+Use an email listed in `admins.emails`. Enter the printed key **privately in your
+MCP client's authentication settings**, never in chat. Each issuance creates a new key.
 
-## Invited to Trolley? Start here
+- **MCP:** `http://localhost:8000/mcp/`
+- **Authentication:** `Authorization: Bearer <your-api-key>`
+- **Agent onboarding:** `http://localhost:8000/onboarding.md`
 
-You do not need to install the server.
+Then ask: **“Trolley, what can you do for me right now?”**
 
-1. **Open your invitation email.** It contains an onboarding URL and an API key.
-2. **Give your agent the onboarding URL**, using the address from your invitation:
+The config file must be readable by container UID/GID `10001`; on Linux, provision
+appropriate group access (for example, GID 10001 and mode 0640).
 
-   > Read this page and help me connect to Trolley:
-   > https://trolley.example.com/onboarding.md
-   > I'll enter my API key directly in the client's settings when needed.
+## Included PostgreSQL
 
-3. **Enter your key privately** in your MCP client's secret or authentication settings.
-   Do not paste it into an AI conversation. Your client may require manual MCP setup.
-4. **Reconnect your client and ask:**
+Compose starts PostgreSQL and configures these **local-development defaults**:
 
-   > Trolley, what can you do for me right now?
-   > Explain my available capabilities and help me get started.
+| Purpose | Database | Account | Password |
+| --- | --- | --- | --- |
+| PostgreSQL provisioning | `trolley` | `trolley` | `trolley_local_password` |
+| Trolley catalog | `trolley` | `trolley_catalog` | `trolley_catalog_password` |
+| Default query Target | `trolley_data` | `trolley_reader` | `trolley_reader_password` |
 
-The agent calls `get_my_capabilities` to learn your role and suggest next steps.
-Then ask it to perform an available task. If a suitable tool is missing, it can ask
-for your approval before submitting a request to an administrator.
+The catalog stores accounts, permissions, Operations, and history. The default
+Target uses a separate, initially empty database and a read-only account that
+cannot connect to the catalog. PostgreSQL is not exposed on a host port.
 
-[Connection details and manual setup →](docs/guide.md#2-connect-your-mcp-client)
+Create/load data using the provisioning account:
 
-## Administrators: create once, share with your team
-
-A saved SQL statement, inputs, and access policy form an **Operation**, exposed as an
-MCP tool. A configured PostgreSQL database is called a **Target**.
-
-After connecting as an administrator, you can ask your agent:
-
-> List the configured Targets and inspect the schema of the database I choose.
-> Help me create a monthly revenue Operation. Propose the SQL and inputs for review,
-> make it restricted, and share it with the finance group.
-
-The workflow is:
-
-```text
-Inspect schema → Review SQL and access → Create Operation → Grant to group → Invite users
+```bash
+docker compose exec postgres psql -U trolley -d trolley_data
 ```
 
-You can do this through MCP without generating code or restarting the server.
-An empty `list_operations` result just means no accessible active Operations are listed;
-it does not mean you lack administrator access. Use `get_my_capabilities` to get started.
+Tables created by `trolley` in the `public` schema automatically grant SELECT to
+`trolley_reader`. Additional owners/schemas require explicit grants. Add other DB
+connections under `targets` in `trolley.yaml`; the Compose DB hostname is `postgres`.
 
-### Tools that show only the caller's data
+**Change all default passwords before remote deployment.** Initial credentials are
+in `compose.yaml`, `docker/postgres/init.sql`, and `trolley.yaml`. Initialization runs
+only on an empty PostgreSQL volume: editing these files does not rotate passwords
+in an existing DB. Use `ALTER ROLE` and update configuration for existing deployments.
+YAML configuration does not interpolate `${VARIABLE}` placeholders.
 
-An Operation can receive the authenticated user's email from Trolley rather than
-from client input. This lets an administrator build a shared “my usage” tool that
-filters by an email column or a trusted key tag.
+## Personal data and files
 
-The administrator must approve the mapping and SQL. Email injection does not add
-row filtering automatically, and group membership alone does not isolate rows.
+Every Operation must declare its data scope:
 
-[Create and share an Operation →](docs/guide.md#3-create-a-tool-and-share-it-with-a-group)
-· [Caller email binding →](docs/guide.md#caller-specific-operations)
+- **`caller`:** structured source + ownership column. Trolley generates a mandatory
+  filter using the API key owner's account email. Callers cannot supply another
+  identity; administrators also see their own rows through this Operation.
+- **`shared`:** administrator-approved SQL whose results are shared with authorized
+  Operation callers. It does not provide per-user row isolation.
 
-## Run your own server
+The administrator must verify source ownership and account-to-data email mappings.
+Sharing a key shares that account's access. See [the personal data contract](docs/caller-data.md).
 
-Python **3.11+** and a PostgreSQL database to query are required. From a checkout of
-this repository:
+An Operation's fixed `output` is either `inline` or `file`. A file Operation creates
+a JSONL.gz download when called; poll `get_execution(execution_id)` for completion.
+Only administrators publish Operations. Developer SQL is read-only and requires
+Target grants; it does not automatically isolate data by caller.
+
+## Operate
+
+```bash
+docker compose logs --tail=100 -f trolley
+docker compose exec trolley trolley target check
+docker compose restart trolley       # Reload configuration
+docker compose up -d --build         # Rebuild after code changes
+docker compose down                  # Stop without deleting volumes
+```
+
+- Trolley runs non-root; configuration is read-only. PostgreSQL data and generated
+  files persist in `postgres-data` and `trolley-data` volumes.
+- **Do not use `docker compose down -v` unless you intend to delete stored data.**
+- For remote use, put an HTTPS reverse proxy in front of the localhost-bound port
+  and set `server.public_base_url` accordingly. Run one Trolley instance.
+- Protect configuration, keys, audit data, and backups. Back up PostgreSQL with its
+  supported backup tools, and preserve configuration separately. Catalog migrations
+  are not versioned; review schema changes before upgrading.
+
+## Local development
+
+Python 3.11+ and a PostgreSQL Target are required without Docker:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install .
-cp trolley.example.yaml trolley.yaml
-```
-
-Edit `trolley.yaml` with your server URL, administrator emails, and database connection:
-
-```yaml
-server:
-  public_base_url: http://localhost:8000
-catalog:
-  database_url: sqlite://./trolley.db
-admins:
-  emails:
-    - admin@example.com
-targets:
-  reporting-db:
-    kind: postgresql
-    url: postgresql://reporting:password@127.0.0.1:5432/my_database
-```
-
-The **catalog** stores Trolley accounts, permissions, Operations, and execution history.
-The **Target** is the database those Operations query.
-
-Check the connection and start Trolley:
-
-```bash
-trolley target check
+pip install -e '.[dev]'
+cp -n trolley.example.yaml trolley.yaml
+# Configure trolley.yaml for your local environment.
 trolley
 ```
 
-In another terminal, using the same environment and working directory, issue the
-first administrator's key:
-
-```bash
-trolley admin issue-key admin@example.com --name initial-admin
-```
-
-Store the printed key in your MCP client's secret settings. Connect using
-`http://localhost:8000/onboarding.md` and ask the first question above.
-
-With [SMTP configured](docs/guide.md#email-configuration), you can instead email the
-key and onboarding link:
-
-```bash
-trolley setup admin@example.com
-```
-
-`setup` sends invitations; it does not install a service. Each run issues a new key
-and leaves existing keys valid.
-
-## Before sharing access
-
-- **Use HTTPS for remote access.** The CLI listens on `0.0.0.0:8000`;
-  `public_base_url` sets public links, not the bind address. Run one server process.
-- **Approve SQL and set access explicitly.** The default is `public` for standard
-  signed-in users. Use `restricted` for granted users/groups or `admin` for admins only.
-- **Limit database privileges.** Use a read-only PostgreSQL account for reporting.
-  Trolley trusts administrators to approve queries; it does not certify SQL as safe.
-- **Protect keys and backups.** Keep `trolley.yaml` and the catalog private. Execution
-  arguments and results are stored in the catalog and may contain sensitive data.
-- **Plan for current limitations.** Keys have no expiry or built-in revocation command.
-  Catalog schema changes have no versioned migrations; back up before upgrading.
+Run `pytest`, `ruff check .`, and `ruff format --check .`. PostgreSQL integration
+tests require a disposable database; see `scripts/test-postgres-integration.sh`.
 
 ## Documentation
 
-| Need | Guide |
-|---|---|
-| Connect an MCP client | [Onboarding and manual setup](docs/guide.md#2-connect-your-mcp-client) |
-| Create tools and invite users | [Administrator walkthrough](docs/guide.md#3-create-a-tool-and-share-it-with-a-group) |
-| Manage groups and permissions | [Access policies](docs/guide.md#managing-access) |
-| Filter by caller email | [Caller-specific Operations](docs/guide.md#caller-specific-operations) |
-| Download approved query results | [JSONL.gz exports](docs/exports.md) |
-| Handle large results | [Limits and pagination](docs/guide.md#query-results-and-large-logs) |
-| Send invitations | [SMTP configuration](docs/guide.md#email-configuration) |
-| Troubleshoot or upgrade | [Troubleshooting](docs/guide.md#troubleshooting) · [Backups](docs/guide.md#backups-and-upgrades) |
-
-## Development
-
-```bash
-pip install -e '.[dev]'
-pytest
-ruff check .
-ruff format --check .
-```
-
-With Docker running, test against a disposable PostgreSQL instance:
-
-```bash
-./scripts/test-postgres-integration.sh
-```
-
-Without an explicitly configured test database, ordinary `pytest` runs skip the
-PostgreSQL integration test. See the [testing guide](docs/guide.md#development).
+- [Connection, administration, and configuration](docs/guide.md)
+- [Personal data access](docs/caller-data.md)
+- [File Operations](docs/exports.md)
+- [Developer and Target access](docs/target-query-design.md)

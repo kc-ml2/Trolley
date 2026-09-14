@@ -20,6 +20,8 @@ class TrolleyTokenVerifier:
 
         role = effective_role(api_key.user.email, api_key.user.role, self.admin_emails)
         scopes = [Scope.USE]
+        if role in (UserRole.ADMIN, UserRole.DEVELOPER):
+            scopes.append(Scope.QUERY)
         if role == UserRole.ADMIN:
             scopes.append(Scope.ADMIN)
         return AccessToken(

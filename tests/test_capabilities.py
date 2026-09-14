@@ -46,7 +46,7 @@ def test_capabilities_follow_authenticated_discovery(tmp_path):
                         assert not any("request_operation" in s for s in result["next_steps"])
                     else:
                         assert "create_operation" not in result["system_tools"]
-                        assert any("request_operation" in s for s in result["next_steps"])
+                        assert not any("request_operation" in s for s in result["next_steps"])
                 finally:
                     auth_context_var.reset(ctx)
 

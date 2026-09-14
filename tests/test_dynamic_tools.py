@@ -21,7 +21,11 @@ def test_dynamic_tool_live_reload(tmp_path) -> None:
             await create_operation(
                 "monthly_revenue",
                 "payments",
-                {"sql": "select $1::text as month", "parameters": ["month"]},
+                {
+                    "data_scope": "shared",
+                    "sql": "select $1::text as month",
+                    "parameters": ["month"],
+                },
                 input_schema={
                     "type": "object",
                     "properties": {"month": {"type": "string"}},
@@ -40,7 +44,11 @@ def test_dynamic_tool_live_reload(tmp_path) -> None:
             await update_operation(
                 "monthly_revenue",
                 description="Updated description",
-                definition={"sql": "select $1::integer", "parameters": ["year"]},
+                definition={
+                    "data_scope": "shared",
+                    "sql": "select $1::integer",
+                    "parameters": ["year"],
+                },
                 input_schema={
                     "type": "object",
                     "properties": {"year": {"type": "integer"}},

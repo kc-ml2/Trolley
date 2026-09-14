@@ -22,6 +22,7 @@ def test_target_and_operation_catalog(tmp_path) -> None:
                 "find_customer",
                 "customers",
                 {
+                    "data_scope": "shared",
                     "sql": "select id from customers where id = $1",
                     "parameters": ["customer_id"],
                 },

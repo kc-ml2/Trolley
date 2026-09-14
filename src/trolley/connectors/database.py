@@ -150,6 +150,7 @@ async def execute(
     *,
     page_size: int | None = None,
     offset: int = 0,
+    readonly: bool = False,
 ) -> Any:
     sql = definition.get("sql")
     if not sql:
@@ -182,7 +183,12 @@ async def execute(
     connection = await asyncpg.connect(database_url(configuration), timeout=limits["timeout"])
     try:
         async with asyncio.timeout(query_timeout):
-            async with connection.transaction(readonly=paginated):
+            async with connection.transaction(readonly=paginated or readonly):
+                if readonly:
+                    await connection.execute(
+                        "SELECT set_config('statement_timeout', $1, true)",
+                        str(max(1, int(query_timeout * 1000))),
+                    )
                 if definition.get("fetch", True):
                     rows = []
                     # Reserve room for envelope fields and an opaque continuation token.

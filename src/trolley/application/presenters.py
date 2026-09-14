@@ -39,7 +39,8 @@ def present_operation(operation: Operation, *, include_definition: bool = True) 
         "description": operation.description,
         "access": operation.access,
         "input_schema": operation.input_schema,
-        "export_enabled": operation.definition.get("export") is True,
+        "output": operation.definition.get("output", "inline"),
+        "data_scope": operation.definition.get("data_scope"),
         "pagination": {
             "enabled": operation.definition.get("pagination") is not None,
             "continuation_tool": "execute",

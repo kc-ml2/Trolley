@@ -28,17 +28,19 @@ def test_user_specific_operation_access(tmp_path, monkeypatch) -> None:
         async def scenario() -> None:
             user = await User.create(email="limited@example.com", name="Limited")
             other = await User.create(email="other@example.com", name="Other")
-            await operations.create_operation("public_report", "db", {"sql": "select 1"})
+            await operations.create_operation(
+                "public_report", "db", {"data_scope": "shared", "sql": "select 1"}
+            )
             await operations.create_operation(
                 "private_report",
                 "db",
-                {"sql": "select 1"},
+                {"data_scope": "shared", "sql": "select 1"},
                 access=OperationAccess.RESTRICTED,
             )
             await operations.create_operation(
                 "admin_report",
                 "db",
-                {"sql": "select 1"},
+                {"data_scope": "shared", "sql": "select 1"},
                 access=OperationAccess.ADMIN,
             )
 

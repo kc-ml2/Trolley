@@ -15,6 +15,7 @@ from trolley.auth.roles import effective_role
 from trolley.connectors.export import export_jsonl
 from trolley.persistence.models import ApiKey, ExportJob, Operation
 from trolley.targets import get_targets
+from trolley.validation.caller import compile_definition
 from trolley.validation.operations import validate_definition
 
 logger = logging.getLogger(__name__)
@@ -89,15 +90,16 @@ class ExportManager:
         ):
             raise PermissionError("Operation access denied")
         validate_definition(operation.target, operation.definition, operation.input_schema)
-        if operation.definition.get("export") is not True:
-            raise ValueError("Operation is not export-enabled")
+        if operation.definition.get("output", "inline") != "file":
+            raise ValueError("Operation does not use file output")
         values = dict(arguments)
-        bindings = operation.definition.get("bindings", {})
+        compiled = compile_definition(operation.definition, operation.input_schema)
+        bindings = compiled.get("bindings", {})
         if set(values) & set(bindings):
             raise ValueError("Server-bound parameters cannot be supplied by the client")
         validate(values, operation.input_schema)
         values.update({name: user.email for name in bindings})
-        if set(values) != set(operation.definition.get("parameters", [])):
+        if set(values) != set(compiled.get("parameters", [])):
             raise ValueError("Arguments must match Operation parameters")
         target = get_targets().get(operation.target.name)
         if target is None or target.kind != operation.target.kind:
@@ -132,7 +134,11 @@ class ExportManager:
         partial = self.path(job).with_suffix(".part")
         try:
             rows, size, file_size = await export_jsonl(
-                target.configuration, operation.definition, values, partial, self.limits
+                target.configuration,
+                compile_definition(operation.definition, operation.input_schema),
+                values,
+                partial,
+                self.limits,
             )
             partial.replace(self.path(job))
             job.status = "succeeded"
@@ -165,7 +171,10 @@ class ExportManager:
         arguments = {
             k: v
             for k, v in job.arguments.items()
-            if k not in original.definition.get("bindings", {})
+            if k
+            not in compile_definition(original.definition, original.input_schema).get(
+                "bindings", {}
+            )
         }
         operation, values, _ = await self.resolve(original.name, arguments, context)
         if query_fingerprint(operation, values) != job.fingerprint:
@@ -180,7 +189,8 @@ class ExportManager:
 
     def present(self, job):
         return {
-            "export_id": str(job.id),
+            "execution_id": str(job.id),
+            "output": "file",
             "status": job.status,
             "row_count": job.row_count,
             "uncompressed_bytes": job.byte_count,

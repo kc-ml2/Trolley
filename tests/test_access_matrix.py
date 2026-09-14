@@ -24,17 +24,19 @@ def test_operation_access_matrix_and_inactive_target(tmp_path) -> None:
             admin = await User.create(email="admin@example.com", name="Admin", role=UserRole.ADMIN)
             await users.update_user_access(assigned_user.email, UserOperationAccess.ASSIGNED_ONLY)
             await Target.create(name="db", kind="postgresql")
-            await operations.create_operation("public", "db", {"sql": "select 1"})
+            await operations.create_operation(
+                "public", "db", {"data_scope": "shared", "sql": "select 1"}
+            )
             await operations.create_operation(
                 "restricted",
                 "db",
-                {"sql": "select 1"},
+                {"data_scope": "shared", "sql": "select 1"},
                 access=OperationAccess.RESTRICTED,
             )
             await operations.create_operation(
                 "admin_only",
                 "db",
-                {"sql": "select 1"},
+                {"data_scope": "shared", "sql": "select 1"},
                 access=OperationAccess.ADMIN,
             )
             await grants.grant_operation(standard_user.email, "restricted")

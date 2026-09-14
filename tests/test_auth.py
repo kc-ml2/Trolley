@@ -41,9 +41,11 @@ def test_bearer_auth_and_operation_access(tmp_path, monkeypatch) -> None:
             assert "trolley:admin" not in user_auth.scopes
 
             await Target.create(name="payments", kind="postgresql")
-            await operations.create_operation("revenue", "payments", {"sql": "select 1"})
             await operations.create_operation(
-                "profit", "payments", {"sql": "select 2"}, access="admin"
+                "revenue", "payments", {"data_scope": "shared", "sql": "select 1"}
+            )
+            await operations.create_operation(
+                "profit", "payments", {"data_scope": "shared", "sql": "select 2"}, access="admin"
             )
             user_context = AuthContext(
                 user_id=str(user.id), api_key_id=str(user_key.id), role=UserRole.USER

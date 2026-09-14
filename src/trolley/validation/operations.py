@@ -6,6 +6,7 @@ from jsonschema import Draft202012Validator
 
 from trolley.mcp.constants import RESERVED_TOOL_NAMES
 from trolley.persistence.models import Target
+from trolley.validation.caller import compile_definition
 
 TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 DEFAULT_INPUT_SCHEMA = {
@@ -39,16 +40,22 @@ def validate_definition(
     definition: dict[str, Any],
     input_schema: dict[str, Any],
 ) -> None:
+    definition = compile_definition(definition, input_schema)
     sql = definition.get("sql")
     if not isinstance(sql, str) or not sql.strip():
         raise ValueError("PostgreSQL operation needs a non-empty SQL string")
     if not isinstance(definition.get("fetch", True), bool):
         raise ValueError("PostgreSQL fetch must be a boolean")
-    if type(definition.get("export", False)) is not bool:
-        raise ValueError("export must be a boolean")
-    if definition.get("export") and not definition.get("fetch", True):
-        raise ValueError("Export requires fetch: true")
+    if "export" in definition:
+        raise ValueError("Use output: 'file' instead of the export option")
+    output = definition.get("output", "inline")
+    if output not in ("inline", "file"):
+        raise ValueError("output must be 'inline' or 'file'")
+    if output == "file" and not definition.get("fetch", True):
+        raise ValueError("File output requires fetch: true")
     pagination = definition.get("pagination")
+    if output == "file" and pagination is not None:
+        raise ValueError("File output does not support pagination")
     if pagination is not None:
         if not definition.get("fetch", True):
             raise ValueError("Pagination is only supported for read queries")

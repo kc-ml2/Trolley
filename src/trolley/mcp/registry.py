@@ -50,6 +50,7 @@ class DynamicToolRegistry:
                     operation.name,
                     remove_missing_arguments(arguments),
                     context,
+                    export_manager=getattr(self.server, "export_manager", None),
                 )
             except (PermissionError, ValueError) as error:
                 raise ToolError(str(error)) from error
@@ -60,6 +61,12 @@ class DynamicToolRegistry:
             invoke,
             name=operation.name,
             description=operation.description
+            + (
+                " Generates a JSONL.gz file. Confirm scope/content before execution. "
+                "Poll get_execution with the returned execution_id; do not re-execute to poll."
+                if operation.definition.get("output", "inline") == "file"
+                else ""
+            )
             + (
                 " Returns the first page. If has_more is true, continue with execute "
                 "using next_cursor as cursor and identical arguments. Pages are not a snapshot."

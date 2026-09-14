@@ -21,6 +21,7 @@ def test_byte_limited_pages_advance_by_returned_rows(monkeypatch):
     monkeypatch.setattr("trolley.connectors.database.asyncpg.connect", connect)
     config = {"url": "postgresql://unused/test", "max_result_bytes": 500}
     definition = {
+        "data_scope": "shared",
         "sql": "SELECT id, payload FROM logs -- trailing",
         "pagination": {"order_by": ["id"]},
     }
