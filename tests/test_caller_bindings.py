@@ -33,7 +33,7 @@ def test_caller_email_binding(tmp_path, monkeypatch):
                 "ownership": {"column": "email", "identity": "authenticated_user.email"},
                 "pagination": {"order_by": ["id"]},
             }
-            # Even permissive client schemas cannot override server bindings.
+            # Caller schemas are closed; clients cannot override generated identity bindings.
             await create_operation(
                 "my_usage",
                 "db",
@@ -91,7 +91,7 @@ def test_caller_email_binding(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "bindings", [None, [], {"email": "client.email"}, {"bad-name": "authenticated_user.email"}]
+    "bindings", [None, {}, [], {"email": "client.email"}, {"bad-name": "authenticated_user.email"}]
 )
 def test_invalid_binding_sources(bindings):
     with pytest.raises(ValueError, match="bindings"):

@@ -26,10 +26,12 @@ not an already-running query or streaming response.
 ## Create a file Operation as an administrator
 
 Set `definition.output: "file"` when creating a purpose-specific Operation, for example
-`get_my_weekly_data`. The default is `"inline"`. SQL, input schema, permissions, and
-caller bindings still apply; file output does not add row filters or accept arbitrary
-caller SQL. Both the named tool and `execute` start file generation. File Operations
-require `fetch: true` and cannot configure pagination. If you also need inline results,
+`get_my_weekly_data`. The default is `"inline"`. Input schemas and access policies
+still apply. Caller scope generates an owner-filtered query; shared scope uses
+administrator-approved SQL. Neither accepts SQL from the executing caller.
+Both the named tool and `execute` start file generation. File Operations cannot
+configure pagination. Shared SQL requires `fetch: true` (the default); caller scope
+sets it internally and forbids an explicit `fetch` field. If you also need inline results,
 publish a separate inline Operation. Only administrators can create/change output modes.
 Use complete replacement definitions with `update_operation`. The old `export` boolean
 is rejected; there are no `start_export` or `get_my_export` system tools.

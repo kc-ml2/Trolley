@@ -28,8 +28,10 @@ SQL is recorded and may contain sensitive literals; protect the catalog.
 
 ## 1. Install and start Trolley
 
-Follow the [README setup](../README.md#run-your-own-server). Configuration starts from
-[trolley.example.yaml](../trolley.example.yaml); keep `trolley.yaml` private.
+Follow the [Docker quick start](deployment.md#quick-start) or
+[local Python setup](deployment.md#local-development). Docker configuration starts from
+[trolley.docker.example.yaml](../trolley.docker.example.yaml); local Python uses
+[trolley.example.yaml](../trolley.example.yaml). Keep `trolley.yaml` private.
 
 | Setting | Purpose |
 |---|---|
@@ -84,8 +86,10 @@ Refresh discovery when Tools or permissions change.
 
 ## 3. Create a Tool and share it with a group
 
-A **Target** is a configured database. An **Operation** is approved SQL, inputs, and an
-access policy exposed as a Tool. A **grant** gives a user or group permission to run it.
+A **Target** is a configured database connection. An **Operation** exposes an
+administrator-approved query definition, inputs, and access policy as a Tool.
+`shared` definitions use SQL; `caller` definitions use structured ownership and a
+server-generated query. A **grant** gives a user or group permission to run a Tool.
 
 As an administrator:
 
@@ -102,7 +106,7 @@ As an administrator:
   "access": "restricted",
   "definition": {
     "data_scope": "shared",
-  "sql": "SELECT coalesce(sum(amount), 0) AS revenue FROM payments WHERE paid_at >= $1::text::date AND paid_at < ($1::text::date + interval '1 month')",
+    "sql": "SELECT coalesce(sum(amount), 0) AS revenue FROM payments WHERE paid_at >= $1::text::date AND paid_at < ($1::text::date + interval '1 month')",
     "parameters": ["month"],
     "fetch": true
   },
@@ -116,9 +120,11 @@ As an administrator:
 ```
 
 `parameters` maps inputs to `$1`, `$2`, etc. Names must match schema-required inputs
-for shared SQL Operations. Caller Operations use [structured ownership](#caller-specific-operations). Dates arrive as strings;
-cast through `text`. Use a single statement suitable for a transaction.
-`fetch: true` returns rows; `fetch: false` returns a command status.
+for shared SQL Operations. Caller Operations use
+[structured ownership](#caller-specific-operations). For shared SQL, dates arrive as
+strings; cast through `text` and use a single statement suitable for a transaction.
+Shared SQL supports `fetch: true` for rows or `fetch: false` for command status;
+caller scope is always read-only and does not accept a `fetch` field.
 
 4. `create_group({"name": "finance", "description": "Finance team"})`
 5. `grant_group_operation({"group_name": "finance", "operation_name": "monthly_revenue"})`

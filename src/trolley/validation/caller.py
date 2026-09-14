@@ -19,9 +19,9 @@ def compile_definition(definition: dict, input_schema: dict) -> dict:
     if scope not in ("caller", "shared"):
         raise ValueError("data_scope must explicitly be 'caller' or 'shared'")
     if scope == "shared":
-        if "ownership" in definition or "source" in definition or "filters" in definition:
-            raise ValueError("Ownership/source/filters require caller data_scope")
-        if definition.get("bindings"):
+        if {"ownership", "source", "filters", "columns"} & set(definition):
+            raise ValueError("Ownership/source/filters/columns require caller data_scope")
+        if "bindings" in definition:
             raise ValueError("Personal data requires caller data_scope, not SQL bindings")
         return deepcopy(definition)
     allowed = {"data_scope", "source", "ownership", "columns", "filters", "output", "pagination"}
