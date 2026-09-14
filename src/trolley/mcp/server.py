@@ -9,12 +9,20 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
-from trolley.application import grants, groups, operation_requests, operations, targets, users
+from trolley.application import (
+    grants,
+    groups,
+    operations,
+    queries,
+    target_access,
+    targets,
+    users,
+)
 from trolley.application.access import accessible_operation_names
 from trolley.application.execution import execute_operation
+from trolley.application.execution_status import get_execution as execution_status
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
-from trolley.domain.operation_requests import OperationRequestStatus
 from trolley.domain.operations import OperationAccess
 from trolley.domain.users import UserOperationAccess, UserRole
 from trolley.email import EmailService
@@ -101,16 +109,24 @@ def create_mcp_server(
             "Call get_my_capabilities after connecting to learn your role, available "
             "system tools, and next steps. An empty list_operations result does not mean "
             "you lack administrator access. Administrators can inspect Targets and create "
-            "Operations using their available system tools. "
+            "Operations using their available system tools. Developers and administrators "
+            "can use query_target for read-only exploration without creating Operations. "
+            "Developers need explicit Target grants and cannot publish Operations. "
+            "Only administrators create, modify, and share Operations. "
             "Trolley operations may change at runtime. Call list_operations to discover "
             "the operations currently available to you. Use "
             "execute with an operation name and arguments matching its input_schema. "
             "Call list_operations again whenever an expected operation is missing or "
-            "permissions may have changed. If no operation meets the user's need, ask "
-            "for confirmation before recording it with request_operation. Never include "
-            "credentials or sensitive data in a request. Dynamic operation tools are "
+            "permissions may have changed. If no Operation meets the user's need, suggest "
+            "contacting an administrator outside Trolley. Personal-data Operations must bind "
+            "the authenticated caller's email on the server, not accept a caller-selected "
+            "identity. Administrators can use query_target for cross-user queries. "
+            "Dynamic operation tools are "
             "conveniences; prefer list_operations and execute when the cached tool list "
-            "may be stale. Query results contain rows, has_more and next_cursor. "
+            "may be stale. An Operation's output mode is fixed by its administrator. "
+            "File Operations start file generation on invocation: confirm scope/content first, "
+            "then poll get_execution with the execution_id until complete. Do not re-execute "
+            "just to check status. Inline query results contain rows, has_more and next_cursor. "
             "For paginated operations, continue with execute using the unchanged cursor, "
             "operation name, arguments and page_size. Cursors expire after 15 minutes "
             "from the first page. has_more means the result is incomplete: never claim "
@@ -130,32 +146,17 @@ def create_mcp_server(
     server.export_manager = None
 
     @server.system_tool(
-        SystemToolName.START_EXPORT,
+        SystemToolName.GET_EXECUTION,
         description=(
-            "Start a bounded read-only JSONL.gz export of an approved export-enabled Operation. "
-            "Obtain user agreement on scope and sensitive body inclusion. Uses normal access "
-            "checks and server bindings. Poll get_my_export; no data bodies returned in MCP."
+            "Check your Operation execution status. File executions include a download URL "
+            "when complete. Download requires an active owner API key in the Authorization "
+            "header, never in URLs or chat. Inline status does not replay result bodies."
         ),
     )
-    async def start_export(
-        name: str, arguments: dict | None = None, *, auth_context: AuthContext
-    ) -> dict:
-        if server.export_manager is None:
-            raise ValueError("Export service unavailable")
-        return await server.export_manager.start(name, arguments, auth_context)
-
-    @server.system_tool(
-        SystemToolName.GET_MY_EXPORT,
-        description=(
-            "Check your export status and authenticated download URL. Download needs an active "
-            "owner API key in Authorization header, never in URL or agent conversation."
-        ),
-    )
-    async def get_my_export(export_id: str, *, auth_context: AuthContext) -> dict:
-        if server.export_manager is None:
-            raise ValueError("Export service unavailable")
-        job = await server.export_manager.get(export_id, auth_context)
-        return server.export_manager.present(job)
+    async def get_execution(execution_id: str, *, auth_context: AuthContext) -> dict:
+        return await execution_status(
+            execution_id, auth_context, settings or Settings(), server.export_manager
+        )
 
     @server.system_tool(
         SystemToolName.GET_MY_CAPABILITIES,
@@ -171,6 +172,7 @@ def create_mcp_server(
         guidance = {
             "list_targets": "Discover configured databases with list_targets.",
             "get_target_schema": "Inspect a selected database with get_target_schema.",
+            "query_target": "Explore an accessible Target with read-only SQL using query_target.",
             "create_operation": (
                 "Review SQL, inputs, and access policy, then create an Operation "
                 "with create_operation."
@@ -179,11 +181,6 @@ def create_mcp_server(
             "execute": "Run a suitable Operation with execute and its declared inputs.",
         }
         next_steps = [text for name, text in guidance.items() if name in names]
-        if "create_operation" not in names and "request_operation" in names:
-            next_steps.append(
-                "If no suitable Operation exists, confirm the request with the user "
-                "before submitting request_operation. Do not include sensitive data."
-            )
         return {
             "role": auth_context.role,
             "system_tools": names,
@@ -191,6 +188,9 @@ def create_mcp_server(
                 "You have administrator access. Use the available system tools below "
                 "to inspect databases, create Operations, and manage users, groups, and grants."
                 if auth_context.role == UserRole.ADMIN
+                else "You can inspect and query granted Targets, and run accessible Operations. "
+                "Only administrators can publish Operations."
+                if auth_context.role == UserRole.DEVELOPER
                 else "You can discover and run Operations available to your account."
             ),
             "next_steps": next_steps,
@@ -292,18 +292,54 @@ def create_mcp_server(
     async def create_api_key(email: str, name: str) -> dict:
         return await users.issue_api_key(email, name)
 
+    @server.system_tool(SystemToolName.SET_USER_ROLE, description="Assign a user role (admin)")
+    async def set_user_role(email: str, role: UserRole) -> dict:
+        return await users.set_user_role(email, role, admin_emails=admin_emails)
+
+    server.system_tool(
+        SystemToolName.SET_TARGET_ACCESS,
+        description=(
+            "Grant/revoke Target exploration for a user or group (admin). "
+            "Requires developer role to use."
+        ),
+    )(target_access.set_target_access)
+    server.system_tool(SystemToolName.LIST_TARGET_GRANTS, description="List Target grants (admin)")(
+        target_access.list_target_grants
+    )
+
     if settings is not None:
 
-        @server.system_tool(SystemToolName.LIST_TARGETS, description="List targets (admin)")
-        async def list_targets() -> list[dict]:
-            return await targets.list_targets(settings)
+        @server.system_tool(
+            SystemToolName.LIST_TARGETS, description="List accessible exploration Targets"
+        )
+        async def list_targets(*, auth_context: AuthContext) -> list[dict]:
+            allowed = await target_access.accessible_target_names(auth_context)
+            return [t for t in await targets.list_targets(settings) if t["name"] in allowed]
 
         @server.system_tool(
             SystemToolName.GET_TARGET_SCHEMA,
-            description="Inspect the complete live schema of a target (admin)",
+            description="Inspect the live schema of an accessible Target (developer/admin)",
         )
-        async def get_target_schema(name: str) -> dict:
-            return await targets.get_target_schema(settings, name)
+        async def get_target_schema(name: str, *, auth_context: AuthContext) -> dict:
+            await target_access.require_target(auth_context, name)
+            try:
+                return await targets.get_target_schema(settings, name)
+            except Exception as error:
+                raise ValueError("Schema inspection failed; check Target configuration") from error
+
+        @server.system_tool(
+            SystemToolName.QUERY_TARGET,
+            description=(
+                "Execute one read-only SQL statement on an accessible Target (developer/admin). "
+                "Use $1, $2 placeholders with params. "
+                "Bounded results; narrow queries exceeding limits. "
+                "Does not create an Operation. SQL is recorded in audit history."
+            ),
+        )
+        async def query_target(
+            name: str, sql: str, params: list | None = None, *, auth_context: AuthContext
+        ) -> dict:
+            return await queries.query_target(settings, auth_context, name, sql, params)
 
     @server.system_tool(
         SystemToolName.LIST_OPERATIONS,
@@ -317,64 +353,22 @@ def create_mcp_server(
         return await operations.list_operations(auth_context)
 
     @server.system_tool(
-        SystemToolName.REQUEST_OPERATION,
-        description=(
-            "Record a request for a missing operation after checking list_operations "
-            "and obtaining the user's confirmation. Do not include credentials or "
-            "sensitive data."
-        ),
-    )
-    async def request_operation(
-        title: str,
-        description: str,
-        reason: str,
-        *,
-        auth_context: AuthContext,
-    ) -> dict:
-        return await operation_requests.request_operation(title, description, reason, auth_context)
-
-    @server.system_tool(
-        SystemToolName.LIST_MY_OPERATION_REQUESTS,
-        description="List the authenticated user's operation requests and their status",
-    )
-    async def list_my_operation_requests(*, auth_context: AuthContext) -> list[dict]:
-        return await operation_requests.list_my_operation_requests(auth_context)
-
-    @server.system_tool(
-        SystemToolName.LIST_OPERATION_REQUESTS,
-        description="List operation requests for administrator review",
-    )
-    async def list_operation_requests(
-        status: OperationRequestStatus | None = None,
-    ) -> list[dict]:
-        return await operation_requests.list_operation_requests(status)
-
-    @server.system_tool(
-        SystemToolName.RESOLVE_OPERATION_REQUEST,
-        description="Mark an operation request as fulfilled or rejected (admin)",
-    )
-    async def resolve_operation_request(
-        request_id: str,
-        status: OperationRequestStatus,
-        admin_note: str = "",
-        operation_name: str | None = None,
-    ) -> dict:
-        return await operation_requests.resolve_operation_request(
-            request_id, status, admin_note, operation_name
-        )
-
-    @server.system_tool(
         SystemToolName.CREATE_OPERATION,
         description=(
             "Register and immediately expose a dynamic operation (admin). "
-            "To filter by the authenticated caller's email, set definition.bindings to "
-            '{"caller_email": "authenticated_user.email"} and include caller_email in '
-            "definition.parameters at its SQL placeholder position, but NOT in input_schema. "
-            "The server supplies this value; clients cannot override it. "
-            "Administrators must approve the SQL and the trustworthiness of the email mapping. "
-            "Set definition.export=true to allow start_export: a bounded read-only snapshot "
-            "to JSONL.gz, independent of MCP pagination. Explicitly select safe columns and "
-            "define date/body controls in SQL and input_schema; export does not add row filters."
+            "definition.data_scope is required: 'caller' for personal data, 'shared' for "
+            "explicitly shared results. Caller definitions forbid SQL/parameters/bindings: use "
+            "source={schema,relation}, columns=[column names], "
+            "ownership={column,identity:'authenticated_user.email'}, and optional "
+            "filters=[{column,operator,parameter}] (eq/gte/gt/lte/lt). All filter inputs must "
+            "be declared and required; additionalProperties must be false. The server builds "
+            "a read-only query with a mandatory owner filter. The source must truthfully map "
+            "each row's data to its owner; administrators must review views and email mappings. "
+            "Shared definitions use SQL/parameters but cannot use caller bindings. "
+            "Set definition.output='file' to make this Operation generate a bounded read-only "
+            "JSONL.gz file when called; default output='inline' returns rows. File output cannot "
+            "use pagination. Explicitly select safe columns and "
+            "define bounded date filters in the structured definition or shared SQL."
         ),
     )
     async def create_operation(
@@ -395,8 +389,9 @@ def create_mcp_server(
         SystemToolName.UPDATE_OPERATION,
         description=(
             "Update and immediately reload a dynamic operation (admin). Supply complete "
-            "replacement definitions/schemas. definition.bindings can map parameter names to "
-            "authenticated_user.email; include these names in parameters, not input_schema."
+            "replacement definitions/schemas. data_scope must explicitly be caller or shared. "
+            "Caller scope requires structured source/ownership/columns/filters as described "
+            "by create_operation; arbitrary SQL and caller-selected owner identity are forbidden."
         ),
     )
     async def update_operation(
@@ -450,20 +445,15 @@ def create_mcp_server(
         return await grants.list_operation_grants(operation_name, email)
 
     @server.system_tool(
-        SystemToolName.RELOAD_TOOLS,
-        description="Reload all dynamic operations from the database (admin)",
-    )
-    async def reload_tools() -> dict[str, int]:
-        return {"loaded": await server.registry.load()}
-
-    @server.system_tool(
         SystemToolName.EXECUTE,
         description=(
             "Execute an available operation by name. Use list_operations to discover "
             "the operation and construct arguments matching its input_schema. "
             "If pagination is enabled, use page_size for the first page and pass "
             "next_cursor as cursor to continue, keeping arguments and page_size unchanged. "
-            "has_more indicates partial results; pages are not a snapshot."
+            "has_more indicates partial results; pages are not a snapshot. "
+            "File-output Operations start file generation instead; poll get_execution with "
+            "the returned execution_id. Output mode is set by the administrator, not the caller."
         ),
     )
     async def execute(
@@ -475,7 +465,12 @@ def create_mcp_server(
         auth_context: AuthContext,
     ) -> dict:
         return await execute_operation(
-            name, arguments, auth_context, page_size=page_size, cursor=cursor
+            name,
+            arguments,
+            auth_context,
+            page_size=page_size,
+            cursor=cursor,
+            export_manager=server.export_manager,
         )
 
     return server

@@ -34,11 +34,19 @@ def test_group_access_and_revocation(tmp_path, monkeypatch):
             user = await User.get(email="member@example.com")
             context = AuthContext(user_id=str(user.id), api_key_id=str(uuid4()), role=UserRole.USER)
             await operations.create_operation(
-                "private", "db", {"sql": "select 1"}, access=OperationAccess.RESTRICTED
+                "private",
+                "db",
+                {"data_scope": "shared", "sql": "select 1"},
+                access=OperationAccess.RESTRICTED,
             )
-            await operations.create_operation("public", "db", {"sql": "select 1"})
             await operations.create_operation(
-                "legacy", "db", {"sql": "select 1"}, access=OperationAccess.USER
+                "public", "db", {"data_scope": "shared", "sql": "select 1"}
+            )
+            await operations.create_operation(
+                "legacy",
+                "db",
+                {"data_scope": "shared", "sql": "select 1"},
+                access=OperationAccess.USER,
             )
 
             async def names():

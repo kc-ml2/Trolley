@@ -26,11 +26,13 @@ def test_dynamic_tool_list_respects_user_grants(tmp_path) -> None:
             user = await User.create(email="limited@example.com", name="Limited")
             _, secret = await create_api_key(user, "test")
             await Target.create(name="db", kind="postgresql")
-            await operations.create_operation("public_report", "db", {"sql": "select 1"})
+            await operations.create_operation(
+                "public_report", "db", {"data_scope": "shared", "sql": "select 1"}
+            )
             await operations.create_operation(
                 "private_report",
                 "db",
-                {"sql": "select 1"},
+                {"data_scope": "shared", "sql": "select 1"},
                 access=OperationAccess.RESTRICTED,
             )
             await users.update_user_access(user.email, UserOperationAccess.ASSIGNED_ONLY)

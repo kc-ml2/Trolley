@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trolley
+      POSTGRES_USER: trolley
+      POSTGRES_PASSWORD: trolley_local_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trolley -d trolley"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No host port: reachable only through the Compose network.
+
+  trolley:
+    build: .
+    image: trolley:local
+    init: true
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      TROLLEY_CONFIG_FILE: /etc/trolley/trolley.yaml
+    volumes:
+      - type: bind
+        source: ./trolley.yaml
+        target: /etc/trolley/trolley.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - trolley-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+volumes:
+  postgres-data:
+  trolley-data:

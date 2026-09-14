@@ -1,0 +1,24 @@
+# Local development defaults; change passwords before remote deployment.
+server:
+  public_base_url: http://localhost:8000
+catalog:
+  database_url: postgres://trolley_catalog:trolley_catalog_password@postgres:5432/trolley
+admins:
+  emails:
+    - admin@example.com
+targets:
+  default:
+    kind: postgresql
+    url: postgresql://trolley_reader:trolley_reader_password@postgres:5432/trolley_data
+    timeout: 10
+    query_timeout: 30
+    max_rows: 1000
+    max_result_bytes: 1000000
+exports:
+  directory: /data/exports
+  max_rows: 100000
+  max_bytes: 100000000
+  timeout_seconds: 300
+  ttl_seconds: 3600
+  max_jobs: 10
+# Optional SMTP settings: docs/guide.md

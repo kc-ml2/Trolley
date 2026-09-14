@@ -31,7 +31,7 @@ def test_result_serialization_and_audit_failures(tmp_path, monkeypatch):
     with TestClient(create_app(settings)) as client:
 
         async def scenario():
-            await create_operation("report", "db", {"sql": "select 1"})
+            await create_operation("report", "db", {"data_scope": "shared", "sql": "select 1"})
             root = await User.get(email="root@example.com")
             context = AuthContext(
                 user_id=str(root.id), api_key_id=str(uuid4()), role=UserRole.ADMIN
@@ -92,13 +92,28 @@ def test_connector_limits_and_timeout(monkeypatch):
     config = {"url": "postgresql://example/test"}
 
     async def scenario():
-        result = await execute(config, {"sql": "select 1"}, {})
+        result = await execute(config, {"data_scope": "shared", "sql": "select 1"}, {})
         assert len(result["rows"]) == 3
         assert result["rows"][0]["amount"] == "1.50"
         assert result["has_more"] is False
+        await execute(
+            config,
+            {"data_scope": "shared", "sql": "select $1", "parameters": ["n"]},
+            {"n": 7},
+            readonly=True,
+        )
+        assert connection.transaction.call_args.kwargs == {"readonly": True}
+        assert connection.cursor.call_args.args == ("select $1", 7)
+        connection.execute.assert_awaited_with(
+            "SELECT set_config('statement_timeout', $1, true)", "30000"
+        )
         paged = await execute(
             config,
-            {"sql": "select index, amount from logs", "pagination": {"order_by": ["index"]}},
+            {
+                "data_scope": "shared",
+                "sql": "select index, amount from logs",
+                "pagination": {"order_by": ["index"]},
+            },
             {},
             page_size=2,
             offset=5,
@@ -113,14 +128,18 @@ def test_connector_limits_and_timeout(monkeypatch):
         assert (limit, offset) == (3, 5)
         assert connection.transaction.call_args.kwargs == {"readonly": True}
         with pytest.raises(ValueError, match="row limit"):
-            await execute({**config, "max_rows": 2}, {"sql": "select 1"}, {})
+            await execute(
+                {**config, "max_rows": 2}, {"data_scope": "shared", "sql": "select 1"}, {}
+            )
         with pytest.raises(ValueError, match="byte limit"):
-            await execute({**config, "max_result_bytes": 12}, {"sql": "select 1"}, {})
+            await execute(
+                {**config, "max_result_bytes": 12}, {"data_scope": "shared", "sql": "select 1"}, {}
+            )
         transaction = connection.transaction.return_value
         assert transaction.__aexit__.await_args.args[0] is ValueError
-        assert await execute(config, {"sql": "update example", "fetch": False}, {}) == {
-            "status": "UPDATE 1"
-        }
+        assert await execute(
+            config, {"data_scope": "shared", "sql": "update example", "fetch": False}, {}
+        ) == {"status": "UPDATE 1"}
 
         async def slow():
             await asyncio.sleep(1)
@@ -128,8 +147,10 @@ def test_connector_limits_and_timeout(monkeypatch):
 
         connection.cursor.side_effect = lambda *args, **kwargs: slow()
         with pytest.raises(ValueError, match="timed out"):
-            await execute({**config, "query_timeout": 0.01}, {"sql": "select 1"}, {})
-        assert connection.close.await_count == 6
+            await execute(
+                {**config, "query_timeout": 0.01}, {"data_scope": "shared", "sql": "select 1"}, {}
+            )
+        assert connection.close.await_count == 7
 
     asyncio.run(scenario())
 

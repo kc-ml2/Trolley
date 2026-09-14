@@ -17,14 +17,18 @@ def test_rejects_reserved_names_and_parameter_mismatch(tmp_path) -> None:
         async def scenario() -> None:
             await Target.create(name="payments", kind="postgresql")
             with pytest.raises(ValueError, match="reserved"):
-                await create_operation("create_user", "payments", {"sql": "select 1"})
+                await create_operation(
+                    "create_user", "payments", {"data_scope": "shared", "sql": "select 1"}
+                )
             with pytest.raises(ValueError, match="only letters"):
-                await create_operation("monthly revenue", "payments", {"sql": "select 1"})
+                await create_operation(
+                    "monthly revenue", "payments", {"data_scope": "shared", "sql": "select 1"}
+                )
             with pytest.raises(ValueError, match="must match"):
                 await create_operation(
                     "monthly_revenue",
                     "payments",
-                    {"sql": "select $1", "parameters": ["month"]},
+                    {"data_scope": "shared", "sql": "select $1", "parameters": ["month"]},
                     input_schema={
                         "type": "object",
                         "properties": {"other": {"type": "string"}},

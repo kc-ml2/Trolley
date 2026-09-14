@@ -18,7 +18,7 @@ def effective_role(
 ) -> UserRole:
     if stored_role == UserRole.ADMIN and normalize_email(email) in admin_emails:
         return UserRole.ADMIN
-    return UserRole.USER
+    return UserRole.DEVELOPER if stored_role == UserRole.DEVELOPER else UserRole.USER
 
 
 def validate_role_assignment(

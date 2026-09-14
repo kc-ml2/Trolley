@@ -126,8 +126,11 @@ Once connected, ask:
 > Explain my available capabilities and help me get started.
 
 The agent should call `get_my_capabilities` first to learn the caller's effective role,
-available system tools, and next steps. Administrators can inspect Targets and create
-Operations; regular users can discover, run, or request Operations. An empty
+available system tools, and next steps. Administrators manage Target access and publish
+Operations. Developers can inspect and query explicitly granted Targets with
+`list_targets`, `get_target_schema`, and `query_target`, without creating Operations.
+Only administrators can create or share Operations. Regular users can discover,
+and run Operations. An empty
 `list_operations` result does not imply missing administrator access.
 
 ## Using Trolley
@@ -137,9 +140,9 @@ available to the authenticated user. Choose an operation, construct arguments
 that match its `input_schema`, and call `execute`. Call `list_operations` again
 when an expected operation is missing or permissions may have changed. Dynamic
 operation tools are conveniences and a client's cached Tool list may be stale.
-If no available operation meets the user's need, ask for confirmation before
-calling `request_operation`. Never put credentials or sensitive data in a
-request. Use `list_my_operation_requests` to check its status later.
+If no available Operation meets the user's need, suggest contacting an administrator
+outside Trolley. Personal-data Operations use the authenticated caller's email through
+server bindings, not a user-supplied email. Administrators can query Targets directly.
 
 Example configuration (adapt it to the MCP client):
 

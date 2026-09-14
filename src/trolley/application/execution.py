@@ -13,6 +13,7 @@ from trolley.domain.operations import ExecutionStatus
 from trolley.persistence.models import Execution, ExecutionPage, Operation, User
 from trolley.serialization import json_value
 from trolley.targets import get_targets
+from trolley.validation.caller import compile_definition
 from trolley.validation.operations import validate_definition
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ async def execute_operation(
     *,
     page_size: int | None = None,
     cursor: str | None = None,
+    export_manager=None,
 ) -> dict:
     operation = await Operation.get(name=name).prefetch_related("target")
     target = operation.target
@@ -39,7 +41,14 @@ async def execute_operation(
     arguments = dict(arguments or {})
     # Validate catalog definitions as well as newly created/updated Operations.
     validate_definition(target, operation.definition, operation.input_schema)
-    bindings = operation.definition.get("bindings", {})
+    if operation.definition.get("output", "inline") == "file":
+        if page_size is not None or cursor is not None:
+            raise ValueError("File output does not support pagination")
+        if export_manager is None:
+            raise ValueError("File execution service unavailable")
+        return await export_manager.start(name, arguments, context)
+    compiled = compile_definition(operation.definition, operation.input_schema)
+    bindings = compiled.get("bindings", {})
     if set(arguments) & set(bindings):
         raise ValueError("Server-bound parameters cannot be supplied by the client")
     validate(instance=arguments, schema=operation.input_schema)
@@ -78,7 +87,11 @@ async def execute_operation(
                 query_fingerprint=fingerprint,
             )
         result = await database.execute(
-            definition.configuration, operation.definition, arguments, **page_options
+            definition.configuration,
+            compiled,
+            arguments,
+            **({"readonly": True} if operation.definition.get("data_scope") == "caller" else {}),
+            **page_options,
         )
         execution.status = ExecutionStatus.SUCCEEDED
         result = json_value(result)

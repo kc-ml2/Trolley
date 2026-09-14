@@ -1,0 +1,12 @@
+# Allowlist: never send local credentials, catalogs, exports, or git history.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+!src/**
+**/__pycache__/
+**/*.pyc
+**/*.pyo

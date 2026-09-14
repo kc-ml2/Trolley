@@ -45,8 +45,14 @@ async def invite_user(
 ) -> dict[str, Any]:
     selected = await resolve_groups(group_names or [])
     email = normalize_email(email)
-    role = UserRole.ADMIN if email in admin_emails else UserRole.USER
     user = await User.get_or_none(email=email)
+    role = (
+        UserRole.ADMIN
+        if email in admin_emails
+        else UserRole.DEVELOPER
+        if user is not None and user.role == UserRole.DEVELOPER
+        else UserRole.USER
+    )
     if user is None:
         user = await User.create(email=email, name=name.strip(), role=UserRole.USER)
     elif not user.is_active:
@@ -98,8 +104,9 @@ Once connected, try asking:
   Explain my available capabilities and help me get started.
 
 Your agent should first call get_my_capabilities to learn your role and
-available tools. Administrators can inspect databases and create Operations;
-regular users can discover, run, or request Operations. list_operations lists
+available tools. Administrators manage access and publish Operations. Developers
+can inspect and query explicitly granted Targets without creating Operations;
+regular users can discover and run Operations. list_operations lists
 saved database Operations, not the built-in administrator tools.
 
 Then ask it to perform an available task — for example, if a revenue reporting
@@ -107,8 +114,7 @@ tool is available:
 
   Show me the revenue for August 2026.
 
-If no suitable tool is available, your agent can ask for your approval
-before sending a request to a Trolley administrator.
+If no suitable tool is available, contact your Trolley administrator outside Trolley.
 
 PREFER TO CONNECT MANUALLY?
 
@@ -153,6 +159,22 @@ Need help? Contact the administrator who invited you.
         "api_key": present_api_key(key),
         "email_sent": True,
     }
+
+
+async def set_user_role(
+    email: str,
+    role: UserRole,
+    *,
+    admin_emails: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    email = normalize_email(email)
+    validate_role_assignment(email, role, admin_emails)
+    user = await User.get(email=email, is_active=True)
+    if user.role == UserRole.ADMIN:
+        raise PermissionError("Manage administrator roles through server configuration")
+    user.role = role
+    await user.save(update_fields=["role"])
+    return present_user(user)
 
 
 async def update_user_access(

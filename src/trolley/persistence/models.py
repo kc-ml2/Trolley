@@ -1,6 +1,5 @@
 from tortoise import fields, models
 
-from trolley.domain.operation_requests import OperationRequestStatus
 from trolley.domain.operations import ExecutionStatus, OperationAccess
 from trolley.domain.targets import TargetKind
 from trolley.domain.users import UserOperationAccess, UserRole
@@ -19,7 +18,6 @@ class User(models.Model):
 
     api_keys: fields.ReverseRelation["ApiKey"]
     operation_grants: fields.ReverseRelation["OperationGrant"]
-    operation_requests: fields.ReverseRelation["OperationRequest"]
 
 
 class ApiKey(models.Model):
@@ -42,6 +40,44 @@ class Target(models.Model):
     created_at = fields.DatetimeField(auto_now_add=True)
 
     operations: fields.ReverseRelation["Operation"]
+
+
+class TargetGrant(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    user = fields.ForeignKeyField(
+        "models.User", related_name="target_grants", on_delete=fields.CASCADE
+    )
+    target = fields.ForeignKeyField(
+        "models.Target", related_name="grants", on_delete=fields.CASCADE
+    )
+
+    class Meta:
+        unique_together = (("user", "target"),)
+
+
+class GroupTargetGrant(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    group = fields.ForeignKeyField(
+        "models.Group", related_name="target_grants", on_delete=fields.CASCADE
+    )
+    target = fields.ForeignKeyField(
+        "models.Target", related_name="group_grants", on_delete=fields.CASCADE
+    )
+
+    class Meta:
+        unique_together = (("group", "target"),)
+
+
+class QueryExecution(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    target = fields.ForeignKeyField("models.Target", on_delete=fields.RESTRICT)
+    requested_by = fields.UUIDField()
+    api_key_id = fields.UUIDField()
+    sql = fields.TextField()
+    status = fields.CharField(max_length=16, default="running")
+    error = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    finished_at = fields.DatetimeField(null=True)
 
 
 class Operation(models.Model):
@@ -104,23 +140,6 @@ class GroupOperationGrant(models.Model):
 
     class Meta:
         unique_together = (("group", "operation"),)
-
-
-class OperationRequest(models.Model):
-    id = fields.UUIDField(primary_key=True)
-    requested_by: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
-        "models.User", related_name="operation_requests", on_delete=fields.CASCADE
-    )
-    operation: fields.ForeignKeyNullableRelation[Operation] = fields.ForeignKeyField(
-        "models.Operation", related_name="requests", null=True, on_delete=fields.SET_NULL
-    )
-    title = fields.CharField(max_length=255)
-    description = fields.TextField()
-    reason = fields.TextField(default="")
-    status = fields.CharEnumField(OperationRequestStatus, default=OperationRequestStatus.PENDING)
-    admin_note = fields.TextField(default="")
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
 
 
 class PageCursor(models.Model):
