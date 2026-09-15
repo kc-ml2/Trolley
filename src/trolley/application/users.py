@@ -8,6 +8,7 @@ from trolley.auth.api_keys import create_api_key
 from trolley.auth.roles import normalize_email, validate_role_assignment
 from trolley.domain.users import UserOperationAccess, UserRole
 from trolley.email import EmailService
+from trolley.invitation import invitation
 from trolley.persistence.models import ApiKey, GroupMembership, User
 
 
@@ -64,75 +65,8 @@ async def invite_user(
     # memberships after delivery; crashes/failures leave no usable new key.
     key, secret = await create_api_key(user, key_name.strip(), is_active=False)
     try:
-        await email_service.send(
-            user.email,
-            "You're invited to Trolley — let's get connected",
-            f"""Hello {user.name},
-
-You've been invited to Trolley, where you can use your team's shared data
-tools through your AI client.
-
-1. LET YOUR AI AGENT GUIDE YOU
-
-Copy this message into your AI client:
-
-  Read this page and help me connect to Trolley:
-  {onboarding_url}
-  I'll enter my API key directly in the client's settings when needed.
-
-Your agent can use the onboarding instructions to guide you through the
-connection process. Depending on your client, you may need to add the
-MCP server manually.
-
-2. ENTER YOUR API KEY
-
-When prompted, enter this key directly in your MCP client's secret or
-authentication settings, or use the TROLLEY_API_KEY environment variable
-if your client supports it.
-
-API key: {secret}
-
-Keep this key private. Treat it like a password. Do not paste it into an
-AI conversation, share it with others, or commit it to a repository.
-
-3. CONNECT AND SAY HELLO
-
-Save your settings, then reconnect or restart your MCP client if needed.
-Once connected, try asking:
-
-  Trolley, what can you do for me right now?
-  Explain my available capabilities and help me get started.
-
-Your agent should first call get_my_capabilities to learn your role and
-available tools. Administrators manage access and publish Operations. Developers
-can inspect and query explicitly granted Targets without creating Operations;
-regular users can discover and run Operations. list_operations lists
-saved database Operations, not the built-in administrator tools.
-
-Then ask it to perform an available task — for example, if a revenue reporting
-tool is available:
-
-  Show me the revenue for August 2026.
-
-If no suitable tool is available, contact your Trolley administrator outside Trolley.
-
-PREFER TO CONNECT MANUALLY?
-
-Add an MCP server in your client using these details:
-
-  Server name: trolley
-  Server URL: {onboarding_url.removesuffix("/onboarding.md")}/mcp/
-  Authentication: Bearer API key
-  Authorization header, if required: Bearer <your-api-key>
-
-Replace <your-api-key> with your key only in the client's authentication
-settings, not in an AI conversation.
-
-For detailed instructions: {onboarding_url}
-
-Need help? Contact the administrator who invited you.
-""",
-        )
+        subject, body, html = invitation(secret, onboarding_url)
+        await email_service.send(user.email, subject, body, html=html)
     except Exception:
         key.is_active = False
         await key.save()

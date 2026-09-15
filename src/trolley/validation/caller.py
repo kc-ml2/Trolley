@@ -19,11 +19,15 @@ def compile_definition(definition: dict, input_schema: dict) -> dict:
     if scope not in ("caller", "shared"):
         raise ValueError("data_scope must explicitly be 'caller' or 'shared'")
     if scope == "shared":
-        if {"ownership", "source", "filters", "columns"} & set(definition):
+        if {"ownership", "source", "filters", "columns", "dimensions", "metrics"} & set(definition):
             raise ValueError("Ownership/source/filters/columns require caller data_scope")
         if "bindings" in definition:
             raise ValueError("Personal data requires caller data_scope, not SQL bindings")
         return deepcopy(definition)
+    if "metrics" in definition or "dimensions" in definition:
+        from trolley.validation.caller_usage import compile_usage
+
+        return compile_usage(definition, input_schema)
     allowed = {"data_scope", "source", "ownership", "columns", "filters", "output", "pagination"}
     if set(definition) - allowed:
         raise ValueError(

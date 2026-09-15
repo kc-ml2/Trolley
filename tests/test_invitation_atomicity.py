@@ -20,7 +20,7 @@ def test_invite_defers_privileges_until_finalization(tmp_path, monkeypatch):
             user = await User.create(email="next@example.com", name="Next")
             service = AsyncMock()
 
-            async def failed_delivery(*args):
+            async def failed_delivery(*args, **kwargs):
                 await user.refresh_from_db()
                 assert user.role == "user"
                 assert not await ApiKey.filter(user=user, is_active=True).exists()

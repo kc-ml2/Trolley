@@ -29,15 +29,34 @@ authenticated download link when ready. If a tool is missing, contact your admin
 
 ## Who can do what?
 
-| Role | Access |
-| --- | --- |
-| User | Run tools shared with them |
-| Developer | Also inspect and query explicitly granted databases |
-| Administrator | Manage access and create/share tools |
+| Role | Inspect schema / run direct SQL | Create or modify Operations | Run Operations |
+| --- | --- | --- | --- |
+| `user` | No | No | Public or explicitly granted Operations* |
+| `developer` | Only Targets granted to the user or their groups | No | Public or explicitly granted Operations* |
+| `admin` | All active Targets | Yes; also manages access | All active Operations |
+
+\* Users configured as `assigned_only` need explicit grants even for public Operations.
 
 A database connection is a **Target**. An administrator-published tool is an
-**Operation**, such as `get_my_weekly_data`. Developer exploration does not create
-new Operations automatically.
+**Operation**, such as `my_usage`. These permissions are separate:
+
+- **Target access** allows schema inspection and direct, read-only SQL through
+  `query_target`. It does not grant permission to publish Operations, and exploration
+  does not create Operations automatically.
+- **Operation access** allows execution of an approved tool with declared inputs;
+  it does not require Target access or let the caller change the SQL.
+- **Data scope** controls whose data is returned. `caller` enforces authenticated
+  ownership, including for administrators. `shared` has no automatic caller filter.
+  `restricted` controls who may execute an Operation, not which rows it returns.
+
+**Direct SQL does not inherit a caller Operation's personal-data filter.** Its reach
+is determined by the Target's database credentials and database-side permissions.
+Grant developer access only to people trusted to explore that data.
+
+For example, a teammate who only needs personal usage reports should have the `user`
+role and access to a `restricted`, `caller`-scoped `my_usage` Operation—**no Target
+access is needed**. API keys inherit their owning user's permissions; sharing a key
+shares that user's access.
 
 ## Run your own server
 
@@ -45,18 +64,18 @@ Requires Docker with Compose. From this repository:
 
 ```bash
 cp -n trolley.docker.example.yaml trolley.yaml
-# Set admins.emails in trolley.yaml; update an existing config manually.
+# Configure catalog credentials, admins and Targets using docs/deployment.md.
+# Create the private .trolley-postgres.env file described there.
 docker compose up -d --build
 docker compose exec trolley trolley admin issue-key admin@example.com
 ```
 
 Use your configured administrator email. Enter the printed key in your client's
-secret settings. MCP: `http://localhost:8000/mcp/` ·
-Onboarding: `http://localhost:8000/onboarding.md`.
+secret settings. MCP: `http://localhost:7500/mcp/` ·
+Onboarding: `http://localhost:7500/onboarding.md`.
 
-Compose includes PostgreSQL and an initially empty, read-only query Target.
-**Default passwords are for local development only.** Use HTTPS and change passwords
-before remote deployment. On Linux, the config must be readable by container UID/GID
+Compose includes PostgreSQL for the catalog; configure your existing query Targets
+separately. Set a random catalog password before first startup and use HTTPS remotely. On Linux, the config must be readable by container UID/GID
 `10001`. Do not run `docker compose down -v` unless you intend to delete stored data.
 
 [Database defaults, deployment, and development →](docs/deployment.md)
@@ -65,5 +84,7 @@ before remote deployment. On Linux, the config must be readable by container UID
 
 - [Create tools and manage access](docs/guide.md#3-create-a-tool-and-share-it-with-a-group)
 - [Personal data: identity, ownership, and guarantees](docs/caller-data.md)
+- [Caller ownership mapping and usage aggregates](docs/caller-aggregates.md)
+- [한국어 빠른 시작](docs/quickstart-ko.md)
 - [File downloads](docs/exports.md)
 - [Developer access](docs/target-query-design.md)

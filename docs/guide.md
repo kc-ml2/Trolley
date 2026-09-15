@@ -132,7 +132,8 @@ caller scope is always read-only and does not accept a `fetch` field.
 
 Groups must exist before invitation. Reinviting adds groups without removing existing
 memberships. Allowlisted emails receive admin access on successful invitation; others
-receive user access. The new key stays inactive until delivery and finalization succeed.
+receive user access (existing developers retain their role). The new key stays
+inactive until delivery and finalization succeed.
 A failed invitation may leave an inactive key and user record, but does not apply new
 role/group privileges. Retry after fixing the failure.
 
@@ -281,7 +282,10 @@ rows. Cross-user investigation uses `query_target`.
 See [the personal data contract](caller-data.md) for complete definition/input-schema
 examples, key-sharing semantics, and the administrator's responsibility to review
 source ownership. Arbitrary SQL and legacy caller bindings are rejected in caller
-scope. Other Operations must explicitly declare `data_scope: "shared"`.
+scope. For JSON email ownership mappings and date/model usage summaries without a
+DB view, use [structured caller aggregates](caller-aggregates.md). These support
+`count`/`sum` and mandatory ownership checks before aggregation, not arbitrary JOIN SQL.
+Other Operations must explicitly declare `data_scope: "shared"`.
 
 ## Email configuration
 
@@ -300,6 +304,9 @@ smtp:
 
 Use an App Password. Omit SMTP to disable email invitations. Configured SMTP is checked
 at startup (connection, TLS, authentication, NOOP); failure prevents startup.
+Invitations include compact HTML and a plain-text fallback with a private API key.
+Successful SMTP submission does not prove inbox delivery; check spam and threaded
+messages before retrying. Every retry issues a new key.
 
 ## Troubleshooting
 

@@ -60,4 +60,4 @@ fi
 
 export TROLLEY_TEST_POSTGRES_URL="postgresql://trolley_test:${password}@127.0.0.1:${port}/trolley_test"
 echo "Running PostgreSQL integration tests on an isolated database..."
-"$python_bin" -m pytest -q tests/test_postgres_integration.py
+"$python_bin" -m pytest -q tests/test_postgres_integration.py tests/test_caller_usage.py

@@ -1,5 +1,8 @@
 # Personal data access contract
 
+For JSON email ownership mappings and usage summaries without a DB view, see
+[Caller aggregates](caller-aggregates.md). The single-relation form below remains supported.
+
 ## Identity
 
 An API key authenticates its owning Trolley account, not the human currently typing.

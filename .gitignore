@@ -13,6 +13,13 @@ venv/
 
 # Local configuration and data
 trolley.yaml
+.env
+.env.*
+.trolley-postgres.env
+targets.yaml
+compose.override.yaml
+*.db-wal
+*.db-shm
 *.db
 *.sqlite
 *.sqlite3

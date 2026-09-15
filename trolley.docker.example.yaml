@@ -1,19 +1,15 @@
-# Local development defaults; change passwords before remote deployment.
 server:
-  public_base_url: http://localhost:8000
+  public_base_url: http://localhost:7500
 catalog:
-  database_url: postgres://trolley_catalog:trolley_catalog_password@postgres:5432/trolley
+  # Use the same password as POSTGRES_PASSWORD in .trolley-postgres.env.
+  # YAML does not interpolate environment variables.
+  database_url: postgres://trolley:REPLACE_WITH_RANDOM_PASSWORD@postgres:5432/trolley
 admins:
   emails:
     - admin@example.com
-targets:
-  default:
-    kind: postgresql
-    url: postgresql://trolley_reader:trolley_reader_password@postgres:5432/trolley_data
-    timeout: 10
-    query_timeout: 30
-    max_rows: 1000
-    max_result_bytes: 1000000
+# Configure your existing PostgreSQL databases with least-privilege accounts.
+# Do not expose the Trolley catalog as a query Target.
+targets: {}
 exports:
   directory: /data/exports
   max_rows: 100000

@@ -35,7 +35,7 @@ User          → Discover Operation → Execute with declared inputs
 ```
 
 Operation publication is curation of official tools, not a side effect of query
-execution. No developer draft/approval subsystem is required initially. Existing
+execution. No developer draft/approval subsystem is required initially.
 Contact administrators outside Trolley for missing tools. There is no built-in
 Operation request workflow or manual reload tool; tool updates refresh automatically.
 

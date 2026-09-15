@@ -2,6 +2,7 @@ import asyncio
 import smtplib
 import ssl
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 
 from trolley.config import Settings, SmtpSecurity
 
@@ -27,14 +28,20 @@ class EmailService:
         self.available = True
         return True
 
-    async def send(self, recipient: str, subject: str, body: str) -> None:
+    async def send(
+        self, recipient: str, subject: str, body: str, *, html: str | None = None
+    ) -> None:
         if not self.settings.smtp_host:
             raise EmailUnavailableError("Email delivery is not configured")
         message = EmailMessage()
         message["From"] = self.settings.email_from
         message["To"] = recipient
         message["Subject"] = subject
+        message["Date"] = formatdate(localtime=False)
+        message["Message-ID"] = make_msgid()
         message.set_content(body)
+        if html is not None:
+            message.add_alternative(html, subtype="html")
         try:
             await asyncio.to_thread(self._send_sync, message)
         except (OSError, smtplib.SMTPException) as error:

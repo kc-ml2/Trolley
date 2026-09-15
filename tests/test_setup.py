@@ -32,7 +32,8 @@ def test_setup_emails_admin_without_printing_key(tmp_path, monkeypatch, capsys):
 
     asyncio.run(scenario())
     send.assert_awaited_once()
-    assert "API key: sk-trolley-" in send.call_args.args[2]
+    assert "sk-trolley-" in send.call_args.args[2]
+    assert "sk-trolley-" in send.call_args.kwargs["html"]
     assert "sk-trolley-" not in capsys.readouterr().out
 
 
