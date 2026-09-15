@@ -57,7 +57,22 @@ def test_developer_exploration_and_admin_publication(tmp_path):
             ctx = await login(dev)
             try:
                 names = {t.name for t in await server.list_tools()}
-                assert {"query_target", "get_target_schema", "execute"} <= names
+                assert {
+                    "query_target",
+                    "get_target_schema",
+                    "execute",
+                    "get_target_notes",
+                    "update_target_notes",
+                } <= names
+                notes = await call("get_target_notes", name="db")
+                assert notes["version"] == 0
+                updated = await call(
+                    "update_target_notes",
+                    name="db",
+                    expected_version=0,
+                    data_notes="Content may be an array",
+                )
+                assert updated["version"] == 1
                 assert not {"create_operation", "update_operation", "grant_operation"} & names
                 for name, args in (
                     ("create_operation", {}),
@@ -93,6 +108,11 @@ def test_developer_exploration_and_admin_publication(tmp_path):
                 for name, args in (
                     ("query_target", {"name": "db", "sql": "SELECT 1"}),
                     ("get_target_schema", {"name": "db"}),
+                    ("get_target_notes", {"name": "db"}),
+                    (
+                        "update_target_notes",
+                        {"name": "db", "expected_version": 1, "data_notes": "denied"},
+                    ),
                 ):
                     with pytest.raises(ToolError, match="access denied"):
                         await call(name, **args)

@@ -35,6 +35,8 @@ SYSTEM_TOOL_POLICIES: Final = MappingProxyType(
         SystemToolName.QUERY_TARGET: ToolPolicy(Scope.QUERY, ("name", "sql")),
         SystemToolName.LIST_TARGETS: ToolPolicy(Scope.QUERY),
         SystemToolName.GET_TARGET_SCHEMA: ToolPolicy(Scope.QUERY, ("name",)),
+        SystemToolName.GET_TARGET_NOTES: ToolPolicy(Scope.QUERY, ("name",)),
+        SystemToolName.UPDATE_TARGET_NOTES: ToolPolicy(Scope.QUERY, ("name",)),
         SystemToolName.GET_EXECUTION: ToolPolicy(Scope.USE, ("execution_id",)),
         SystemToolName.GET_MY_CAPABILITIES: ToolPolicy(Scope.USE),
         SystemToolName.LIST_OPERATIONS: ToolPolicy(Scope.USE),

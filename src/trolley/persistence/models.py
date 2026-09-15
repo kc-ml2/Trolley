@@ -42,6 +42,30 @@ class Target(models.Model):
     operations: fields.ReverseRelation["Operation"]
 
 
+class TargetNotes(models.Model):
+    target = fields.OneToOneField(
+        "models.Target", related_name="notes", on_delete=fields.CASCADE, primary_key=True
+    )
+    description = fields.TextField(default="")
+    data_notes = fields.TextField(default="")
+    version = fields.IntField(default=0)
+    updated_by = fields.UUIDField(null=True)
+    updated_at = fields.DatetimeField(null=True)
+
+
+class TargetNotesRevision(models.Model):
+    id = fields.UUIDField(primary_key=True)
+    target = fields.ForeignKeyField("models.Target", on_delete=fields.RESTRICT)
+    version = fields.IntField()
+    before = fields.JSONField()
+    after = fields.JSONField()
+    updated_by = fields.UUIDField()
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("target", "version"),)
+
+
 class TargetGrant(models.Model):
     id = fields.UUIDField(primary_key=True)
     user = fields.ForeignKeyField(
