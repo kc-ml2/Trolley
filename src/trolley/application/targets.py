@@ -1,8 +1,9 @@
 from typing import Any
 
+from trolley.application.target_notes import present
 from trolley.config import Settings
 from trolley.connectors import database
-from trolley.persistence.models import Target
+from trolley.persistence.models import Target, TargetNotes
 from trolley.targets import TargetDefinition, load_targets
 
 
@@ -29,8 +30,14 @@ async def sync_targets(settings: Settings) -> None:
 
 async def list_targets(settings: Settings) -> list[dict[str, Any]]:
     definitions = configured_targets(settings)
+    notes = {row.target_id: row for row in await TargetNotes.all()}
+    ids = {row.name: row.id for row in await Target.all()}
     return [
-        {"name": definition.name, "kind": definition.kind}
+        {
+            "name": definition.name,
+            "kind": definition.kind,
+            "description": present(notes.get(ids.get(definition.name)))["description"],
+        }
         for definition in sorted(definitions.values(), key=lambda item: item.name)
     ]
 
@@ -48,4 +55,5 @@ async def get_target_schema(settings: Settings, name: str) -> dict[str, Any]:
     if definition is None:
         raise ValueError(f"Unknown target: {name}")
     schema = await database.inspect_schema(definition.configuration)
-    return {"target": definition.name, "kind": definition.kind, "schemas": schema}
+    notes = await TargetNotes.get_or_none(target__name=name)
+    return {"target": definition.name, "kind": definition.kind, **present(notes), "schemas": schema}

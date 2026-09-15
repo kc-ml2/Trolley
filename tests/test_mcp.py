@@ -37,6 +37,8 @@ def test_mcp_has_small_tool_surface() -> None:
         "query_target",
         "list_targets",
         "get_target_schema",
+        "get_target_notes",
+        "update_target_notes",
         "list_operations",
         "get_my_capabilities",
         "get_execution",

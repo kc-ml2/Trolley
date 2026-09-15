@@ -25,6 +25,8 @@ class SystemToolName(StrEnum):
     QUERY_TARGET = "query_target"
     LIST_TARGETS = "list_targets"
     GET_TARGET_SCHEMA = "get_target_schema"
+    GET_TARGET_NOTES = "get_target_notes"
+    UPDATE_TARGET_NOTES = "update_target_notes"
     LIST_OPERATIONS = "list_operations"
     CREATE_OPERATION = "create_operation"
     UPDATE_OPERATION = "update_operation"

@@ -27,10 +27,15 @@ def test_loads_targets_without_exposing_configuration() -> None:
 
     definitions = load_targets(settings.targets)
     assert definitions["replica"].configuration["timeout"] == 3
-    assert asyncio.run(targets.list_targets(settings)) == [
-        {"name": "replica", "kind": "postgresql"}
-    ]
-    assert "secret" not in str(asyncio.run(targets.list_targets(settings)))
+    with (
+        patch("trolley.application.targets.TargetNotes.all", new_callable=AsyncMock) as notes,
+        patch("trolley.application.targets.Target.all", new_callable=AsyncMock) as catalog,
+    ):
+        notes.return_value = []
+        catalog.return_value = []
+        result = asyncio.run(targets.list_targets(settings))
+    assert result == [{"name": "replica", "kind": "postgresql", "description": ""}]
+    assert "secret" not in str(result)
 
 
 def test_rejects_postgresql_target_without_url() -> None:

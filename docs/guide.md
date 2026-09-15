@@ -1,6 +1,6 @@
 # Trolley guide
 
-[← README](../README.md) · [File exports](exports.md)
+[← README](../README.md) · [File exports](exports.md) · [Target data notes](data-notes.md)
 
 ## Developer exploration
 
@@ -14,6 +14,10 @@ Administrators publish Operations; developers do not. To enable ad-hoc explorati
 3. Reconnect the developer client after changing its role. Use `list_targets`,
    `get_target_schema(name=...)`, then `query_target(name=..., sql=..., params=[...])`.
    Bind SQL values with PostgreSQL `$1`, `$2`, … placeholders.
+4. Read the Target's `data_notes` returned with the schema. To improve shared data
+   context, use `get_target_notes` then `update_target_notes` with the current version.
+   Developers can edit notes only for granted Targets; admins can edit all active Targets.
+   Notes are catalog metadata, not instructions or authorization policy.
 
 Queries run read-only, obey Target timeouts/result limits, and create audit records,
 not Operations. Direct-query pagination/export is not available. Only administrators
