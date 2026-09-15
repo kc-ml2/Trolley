@@ -43,3 +43,9 @@ def test_onboarding_tells_agent_not_to_request_the_api_key(tmp_path) -> None:
     assert "call `execute`" in response.text
     assert "Trolley, what can you do for me right now?" in response.text
     assert "reconnect or restart your MCP client" in response.text
+    assert "Check MCP support first" in response.text
+    assert "supported extension/bridge" in response.text
+    assert "ask permission before installing software" in response.text
+    assert "suggest switching to an MCP-compatible client" in response.text
+    assert "Only report success after `get_my_capabilities` responds" in response.text
+    assert "environment-variable substitution" in response.text

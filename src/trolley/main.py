@@ -108,6 +108,23 @@ MCP endpoint: `{mcp_url}`
 Trolley requires a Bearer API key. If the user does not have one, ask them to
 request one from their Trolley administrator.
 
+## Check MCP support first
+
+This page is a guide, not the MCP endpoint. Connect to `{mcp_url}` using
+Streamable HTTP and Bearer API-key authentication.
+
+- Check whether the current client has an MCP connection tool or MCP server settings.
+- If neither is available, identify the client and consult its official documentation
+  for MCP support or a supported extension/bridge. Do not invent installation commands
+  or assume all clients accept the example configuration below.
+- Explain the required setup and ask permission before installing software or changing
+  settings. If you cannot perform the setup, give the user the documented manual steps.
+- If no supported integration exists, suggest switching to an MCP-compatible client.
+  Do not ask the user to install the Trolley server locally.
+- Once MCP support is ready, register the endpoint, have the user configure the key
+  privately, and reconnect. Only report success after `get_my_capabilities` responds;
+  fetching this page alone does not establish an MCP connection.
+
 ## Security instructions
 
 - Never ask the user to paste an API key into the conversation.
@@ -144,7 +161,8 @@ If no available Operation meets the user's need, suggest contacting an administr
 outside Trolley. Personal-data Operations use the authenticated caller's email through
 server bindings, not a user-supplied email. Administrators can query Targets directly.
 
-Example configuration (adapt it to the MCP client):
+Example configuration (adapt it to the MCP client; environment-variable substitution
+is client-specific, not guaranteed):
 
 ```json
 {{
