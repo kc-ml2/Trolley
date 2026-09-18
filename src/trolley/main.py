@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from tortoise.contrib.fastapi import RegisterTortoise
 
 from trolley.application import targets
-from trolley.application.admins import ensure_admin_users
 from trolley.application.exports import ExportManager
 from trolley.auth.context import AuthContext
 from trolley.config import Settings, get_settings, validate_runtime_settings
@@ -22,7 +21,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_targets(app_settings.targets)
     mcp_app = create_mcp_app(
         app_settings.public_base_url,
-        app_settings.admin_emails,
         app_settings,
     )
 
@@ -36,7 +34,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             config=tortoise_config(app_settings),
             generate_schemas=True,
         ):
-            await ensure_admin_users(app_settings.admin_emails)
             if app_settings.smtp_host:
                 await mcp_app.state.email_service.check()
             await targets.sync_targets(app_settings)
@@ -59,7 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         scheme, _, secret = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not secret:
             raise HTTPException(401, "Bearer authentication required")
-        token = await TrolleyTokenVerifier(app_settings.admin_emails).verify_token(secret)
+        token = await TrolleyTokenVerifier().verify_token(secret)
         if token is None:
             raise HTTPException(401, "Invalid credentials")
         context = AuthContext(token.subject, token.client_id, UserRole(token.claims["role"]))

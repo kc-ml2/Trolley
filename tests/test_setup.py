@@ -1,55 +1,24 @@
 import asyncio
+from argparse import Namespace
 from unittest.mock import AsyncMock
 
-import pytest
-from tortoise import Tortoise
-
-from trolley.cli import parser, setup_admins
+from trolley.cli import manage_local, setup_admins
 from trolley.config import Settings
-from trolley.persistence.database import tortoise_config
-from trolley.persistence.models import ApiKey, User
 
 
-def test_setup_emails_admin_without_printing_key(tmp_path, monkeypatch, capsys):
-    settings = Settings(
-        database_url=f"sqlite://{tmp_path}/setup.db",
-        admin_emails=frozenset({"admin@example.com"}),
-        public_base_url="https://trolley.example.com",
-    )
+def test_setup_emails_existing_account_without_printing_key(tmp_path, monkeypatch, capsys):
+    settings = Settings(database_url=f"sqlite://{tmp_path}/test.db")
     monkeypatch.setattr("trolley.cli.EmailService.check", AsyncMock(return_value=True))
     send = AsyncMock()
     monkeypatch.setattr("trolley.cli.EmailService.send", send)
 
-    async def scenario():
-        await setup_admins(settings, ["ADMIN@example.com", "admin@example.com"], "setup")
-        await Tortoise.init(config=tortoise_config(settings))
-        try:
-            user = await User.get(email="admin@example.com")
-            assert user.role == "admin"
-            assert await ApiKey.filter(user=user, is_active=True).count() == 1
-        finally:
-            await Tortoise.close_connections()
+    async def check():
+        await manage_local(
+            settings, Namespace(action="create-user", email="admin@example.com", role="admin")
+        )
+        await setup_admins(settings, ["admin@example.com"], "initial")
 
-    asyncio.run(scenario())
+    asyncio.run(check())
     send.assert_awaited_once()
-    assert "sk-trolley-" in send.call_args.args[2]
     assert "sk-trolley-" in send.call_args.kwargs["html"]
     assert "sk-trolley-" not in capsys.readouterr().out
-
-
-def test_setup_validates_all_recipients_before_sending(tmp_path, monkeypatch):
-    settings = Settings(
-        database_url=f"sqlite://{tmp_path}/setup.db",
-        admin_emails=frozenset({"admin@example.com"}),
-    )
-    check = AsyncMock(return_value=True)
-    monkeypatch.setattr("trolley.cli.EmailService.check", check)
-    with pytest.raises(PermissionError, match="admins.emails"):
-        asyncio.run(setup_admins(settings, ["admin@example.com", "other@example.com"], "setup"))
-    check.assert_not_called()
-    assert not (tmp_path / "setup.db").exists()
-
-
-def test_setup_parser_accepts_multiple_admins():
-    args = parser().parse_args(["setup", "one@example.com", "two@example.com"])
-    assert args.emails == ["one@example.com", "two@example.com"]

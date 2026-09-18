@@ -22,7 +22,6 @@ def configured_targets() -> dict:
 def test_loads_targets_without_exposing_configuration() -> None:
     settings = Settings(
         targets=configured_targets(),
-        admin_emails=frozenset({"root@example.com"}),
     )
 
     definitions = load_targets(settings.targets)

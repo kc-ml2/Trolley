@@ -6,15 +6,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from jsonschema import validate
-
 from trolley.application.access import can_access_operation
 from trolley.application.pagination import query_fingerprint
 from trolley.auth.context import AuthContext
-from trolley.auth.roles import effective_role
 from trolley.connectors.export import export_jsonl
 from trolley.persistence.models import ApiKey, ExportJob, Operation
 from trolley.targets import get_targets
+from trolley.validation.arguments import validate_arguments
 from trolley.validation.caller import compile_definition
 from trolley.validation.operations import validate_definition
 
@@ -80,7 +78,7 @@ class ExportManager:
         current = AuthContext(
             str(user.id),
             str(key.id),
-            effective_role(user.email, user.role, self.settings.admin_emails),
+            user.role,
         )
         operation = await Operation.get(name=name).prefetch_related("target")
         if (
@@ -97,7 +95,7 @@ class ExportManager:
         bindings = compiled.get("bindings", {})
         if set(values) & set(bindings):
             raise ValueError("Server-bound parameters cannot be supplied by the client")
-        validate(values, operation.input_schema)
+        validate_arguments(values, operation.input_schema)
         values.update({name: user.email for name in bindings})
         if set(values) != set(compiled.get("parameters", [])):
             raise ValueError("Arguments must match Operation parameters")

@@ -9,7 +9,6 @@ def present_user(user: User) -> dict[str, Any]:
         "email": user.email,
         "name": user.name,
         "role": user.role,
-        "operation_access": user.operation_access,
         "is_active": user.is_active,
     }
 
@@ -37,7 +36,7 @@ def present_operation(operation: Operation, *, include_definition: bool = True) 
         "id": str(operation.id),
         "name": operation.name,
         "description": operation.description,
-        "access": operation.access,
+        "authorization": "group_target",
         "input_schema": operation.input_schema,
         "output": operation.definition.get("output", "inline"),
         "data_scope": operation.definition.get("data_scope"),

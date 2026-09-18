@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import UTC, datetime
 
 from trolley.application.target_access import require_target
@@ -10,6 +11,7 @@ from trolley.persistence.models import QueryExecution
 
 # Bound ad-hoc exploration independently of approved Operation execution.
 _query_slots = asyncio.Semaphore(4)
+logger = logging.getLogger(__name__)
 
 
 async def query_target(
@@ -34,6 +36,7 @@ async def query_target(
         )
         values = params or []
         names = [str(i) for i in range(len(values))]
+        response = None
         try:
             # asyncpg's prepared cursor accepts one statement; values use $1, $2, ... .
             result = await database.execute(
@@ -43,7 +46,8 @@ async def query_target(
                 readonly=True,
             )
             execution.status = "succeeded"
-            return {"execution_id": str(execution.id), **result}
+            response = {"execution_id": str(execution.id), **result}
+            return response
         except Exception as error:
             execution.status = "failed"
             execution.error = "Query failed"
@@ -56,4 +60,11 @@ async def query_target(
             raise
         finally:
             execution.finished_at = datetime.now(UTC)
-            await execution.save()
+            try:
+                await asyncio.shield(execution.save())
+            except Exception:
+                logger.error("Could not finalize query audit record %s", execution.id)
+                if response is not None:
+                    response["audit_warning"] = (
+                        "Query succeeded but audit finalization failed; do not retry the query."
+                    )

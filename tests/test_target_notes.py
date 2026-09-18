@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from access_helpers import allow, revoke
 from fastapi.testclient import TestClient
 
 from trolley.application import target_notes, targets
@@ -8,26 +9,30 @@ from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.users import UserRole
 from trolley.main import create_app
-from trolley.persistence.models import Target, TargetGrant, TargetNotesRevision, User
+from trolley.persistence.models import TargetNotesRevision, User
 
 
 def test_notes_permissions_versions_and_persistence(tmp_path):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://localhost/db"}},
     )
     with TestClient(create_app(settings)) as client:
 
         async def scenario():
-            root = await User.get(email="root@example.com")
+            root = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
             dev = await User.create(email="dev@example.com", name="Dev", role=UserRole.DEVELOPER)
             ctx = AuthContext(str(dev.id), str(dev.id), UserRole.DEVELOPER)
             admin = AuthContext(str(root.id), str(root.id), UserRole.ADMIN)
+            await allow(root, "db")
             assert (await target_notes.get_target_notes(admin, "db"))["version"] == 0
             with pytest.raises(PermissionError):
                 await target_notes.update_target_notes(ctx, "db", 0, data_notes="denied")
-            await TargetGrant.create(user=dev, target=await Target.get(name="db"))
+            await allow(dev, "db")
             first = await target_notes.update_target_notes(
                 ctx, "db", 0, description="Logs", data_notes="Content can be an array."
             )
@@ -53,7 +58,7 @@ def test_notes_permissions_versions_and_persistence(tmp_path):
             for kwargs in ({}, {"data_notes": "a" * 20001}, {"description": "a" * 2001}):
                 with pytest.raises(ValueError):
                     await target_notes.update_target_notes(ctx, "db", 2, **kwargs)
-            await TargetGrant.filter(user=dev).delete()
+            await revoke(dev)
             with pytest.raises(PermissionError):
                 await target_notes.get_target_notes(ctx, "db")
             with pytest.raises(PermissionError):

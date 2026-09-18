@@ -23,12 +23,15 @@ def test_mcp_http_requires_valid_bearer_token(tmp_path) -> None:
     secret = "sk-trolley-test-admin"
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"admin@example.com"}),
     )
     with TestClient(create_app(settings)) as client:
 
         async def issue_key() -> None:
-            admin = await User.get(email="admin@example.com")
+            admin = (
+                await User.get_or_create(
+                    email="admin@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
             await create_api_key(admin, "test", secret=secret)
 
         client.portal.call(issue_key)

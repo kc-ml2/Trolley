@@ -1,8 +1,8 @@
 from tortoise import fields, models
 
-from trolley.domain.operations import ExecutionStatus, OperationAccess
+from trolley.domain.operations import ExecutionStatus
 from trolley.domain.targets import TargetKind
-from trolley.domain.users import UserOperationAccess, UserRole
+from trolley.domain.users import UserRole
 
 
 class User(models.Model):
@@ -10,14 +10,10 @@ class User(models.Model):
     email = fields.CharField(max_length=320, unique=True)
     name = fields.CharField(max_length=255)
     role = fields.CharEnumField(UserRole, default=UserRole.USER)
-    operation_access = fields.CharEnumField(
-        UserOperationAccess, default=UserOperationAccess.STANDARD
-    )
     is_active = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     api_keys: fields.ReverseRelation["ApiKey"]
-    operation_grants: fields.ReverseRelation["OperationGrant"]
 
 
 class ApiKey(models.Model):
@@ -66,19 +62,6 @@ class TargetNotesRevision(models.Model):
         unique_together = (("target", "version"),)
 
 
-class TargetGrant(models.Model):
-    id = fields.UUIDField(primary_key=True)
-    user = fields.ForeignKeyField(
-        "models.User", related_name="target_grants", on_delete=fields.CASCADE
-    )
-    target = fields.ForeignKeyField(
-        "models.Target", related_name="grants", on_delete=fields.CASCADE
-    )
-
-    class Meta:
-        unique_together = (("user", "target"),)
-
-
 class GroupTargetGrant(models.Model):
     id = fields.UUIDField(primary_key=True)
     group = fields.ForeignKeyField(
@@ -111,28 +94,12 @@ class Operation(models.Model):
     )
     name = fields.CharField(max_length=255, unique=True)
     description = fields.TextField(default="")
-    access = fields.CharEnumField(OperationAccess, default=OperationAccess.PUBLIC)
     input_schema = fields.JSONField(default=dict)
     definition = fields.JSONField(default=dict)
     is_active = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     executions: fields.ReverseRelation["Execution"]
-    grants: fields.ReverseRelation["OperationGrant"]
-
-
-class OperationGrant(models.Model):
-    id = fields.UUIDField(primary_key=True)
-    user: fields.ForeignKeyRelation[User] = fields.ForeignKeyField(
-        "models.User", related_name="operation_grants", on_delete=fields.CASCADE
-    )
-    operation: fields.ForeignKeyRelation[Operation] = fields.ForeignKeyField(
-        "models.Operation", related_name="grants", on_delete=fields.CASCADE
-    )
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = (("user", "operation"),)
 
 
 class Group(models.Model):
@@ -153,17 +120,6 @@ class GroupMembership(models.Model):
 
     class Meta:
         unique_together = (("group", "user"),)
-
-
-class GroupOperationGrant(models.Model):
-    id = fields.UUIDField(primary_key=True)
-    group = fields.ForeignKeyField("models.Group", related_name="grants", on_delete=fields.CASCADE)
-    operation = fields.ForeignKeyField(
-        "models.Operation", related_name="group_grants", on_delete=fields.CASCADE
-    )
-
-    class Meta:
-        unique_together = (("group", "operation"),)
 
 
 class PageCursor(models.Model):

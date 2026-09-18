@@ -3,11 +3,13 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from access_helpers import allow
 from fastapi.testclient import TestClient
 
 from trolley.application import groups
 from trolley.application.execution import execute_operation
 from trolley.application.operations import create_operation, update_operation
+from trolley.application.target_access import set_target_access
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.users import UserRole
@@ -18,7 +20,6 @@ from trolley.persistence.models import ExecutionPage, PageCursor, User
 def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://example/test"}},
     )
     connector = AsyncMock(
@@ -48,7 +49,12 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
                     "additionalProperties": False,
                 },
             )
-            root = await User.get(email="root@example.com")
+            root = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
+            await allow(root, "db")
             context = AuthContext(
                 user_id=str(root.id), api_key_id=str(uuid4()), role=UserRole.ADMIN
             )
@@ -72,6 +78,7 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
                     "logs", {"kind": "warning"}, context, page_size=2, cursor=cursor
                 )
             other = await User.create(email="other@example.com", name="Other")
+            await allow(other, "db")
             other_context = AuthContext(
                 user_id=str(other.id), api_key_id=str(uuid4()), role=UserRole.USER
             )
@@ -107,12 +114,11 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
 
             await groups.create_group("readers")
             await groups.set_user_groups(other.email, ["readers"])
-            await update_operation("logs", access="restricted")
-            await groups.grant_group_operation("readers", "logs")
+            await set_target_access("db", True, group_name="readers")
             connector.side_effect = None
             connector.return_value = {"rows": [{"id": 1}], "has_more": True}
             granted = await execute_operation("logs", {"kind": "error"}, other_context)
-            await groups.revoke_group_operation("readers", "logs")
+            await set_target_access("db", False, group_name="readers")
             before = connector.await_count
             with pytest.raises(PermissionError, match="denied"):
                 await execute_operation(
@@ -143,7 +149,6 @@ def test_paginated_operation_uses_bound_opaque_cursor(tmp_path, monkeypatch):
 def test_pagination_definition_validation(tmp_path):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://example/test"}},
     )
     with TestClient(create_app(settings)) as client:

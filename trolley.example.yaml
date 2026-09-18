@@ -4,9 +4,6 @@ server:
 catalog:
   database_url: sqlite://./trolley.db
 
-admins:
-  emails:
-    - admin@example.com
 
 # Optional Google Workspace SMTP settings for invite_user.
 # Remove or leave this section commented out to disable email delivery.

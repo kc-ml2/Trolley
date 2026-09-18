@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from access_helpers import allow
 from fastapi.testclient import TestClient
 
 from trolley.application.operations import create_operation, update_operation
@@ -17,7 +18,6 @@ from trolley.persistence.models import ExportJob, User
 def test_export_ownership_download_expiry_and_revocation(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://unused/test"}},
         exports=ExportSettings(directory=str(tmp_path / "exports")),
     )
@@ -35,7 +35,12 @@ def test_export_ownership_download_expiry_and_revocation(tmp_path, monkeypatch):
         manager = app.routes[-1].app.state.mcp_server.export_manager
 
         async def setup():
-            user = await User.get(email="root@example.com")
+            user = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
+            await allow(user, "db")
             key, secret = await create_api_key(user, "test")
             other = await User.create(email="other@example.com", name="Other")
             _, other_secret = await create_api_key(other, "test")
@@ -73,7 +78,6 @@ def test_export_ownership_download_expiry_and_revocation(tmp_path, monkeypatch):
         assert gzip.decompress(response.content) == b'{"id":1}\n'
 
         async def deny_after_change():
-            await update_operation("report", access="restricted")
             # Even administrators must retain the same binding identity.
             await User.filter(id=context.user_id).update(email="changed@example.com")
             with pytest.raises(PermissionError):

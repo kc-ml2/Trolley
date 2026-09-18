@@ -4,9 +4,6 @@ catalog:
   # Use the same password as POSTGRES_PASSWORD in .trolley-postgres.env.
   # YAML does not interpolate environment variables.
   database_url: postgres://trolley:REPLACE_WITH_RANDOM_PASSWORD@postgres:5432/trolley
-admins:
-  emails:
-    - admin@example.com
 # Configure your existing PostgreSQL databases with least-privilege accounts.
 # Do not expose the Trolley catalog as a query Target.
 targets: {}

@@ -5,9 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
-
-from trolley.auth.roles import normalize_admin_emails
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class ConfigurationError(RuntimeError):
@@ -34,7 +32,6 @@ class Settings(BaseModel):
 
     database_url: str = "sqlite://./trolley.db"
     public_base_url: str = "http://localhost:8000"
-    admin_emails: frozenset[str] = frozenset()
     targets: dict[str, dict[str, Any]] = Field(default_factory=dict)
     email_from: str | None = None
     smtp_host: str | None = None
@@ -44,15 +41,6 @@ class Settings(BaseModel):
     smtp_security: SmtpSecurity = SmtpSecurity.STARTTLS
     smtp_timeout: float = 10
     exports: ExportSettings = Field(default_factory=ExportSettings)
-
-    @field_validator("admin_emails", mode="before")
-    @classmethod
-    def parse_admin_emails(cls, value: object) -> frozenset[str]:
-        if value is None or value == "":
-            return frozenset()
-        if isinstance(value, str):
-            return normalize_admin_emails(value.split(","))
-        return normalize_admin_emails(value)
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
@@ -66,7 +54,6 @@ def load_settings(path: str | Path | None = None) -> Settings:
 
     server = _mapping(document, "server")
     catalog = _mapping(document, "catalog")
-    admins = _mapping(document, "admins")
     smtp = _mapping(document, "smtp")
     targets = document.get("targets", {})
     if not isinstance(targets, dict):
@@ -77,7 +64,6 @@ def load_settings(path: str | Path | None = None) -> Settings:
             exports=_mapping(document, "exports"),
             public_base_url=server.get("public_base_url", "http://localhost:8000"),
             database_url=catalog.get("database_url", "sqlite://./trolley.db"),
-            admin_emails=admins.get("emails", []),
             targets=targets,
             email_from=smtp.get("from"),
             smtp_host=smtp.get("host"),
@@ -87,8 +73,11 @@ def load_settings(path: str | Path | None = None) -> Settings:
             smtp_security=smtp.get("security", SmtpSecurity.STARTTLS),
             smtp_timeout=smtp.get("timeout", 10),
         )
-    except ValueError as error:
-        raise ConfigurationError(f"Invalid Trolley configuration: {error}") from error
+    except ValueError:
+        # Pydantic diagnostics can include raw configuration values and credentials.
+        raise ConfigurationError(
+            "Invalid Trolley configuration; check field types and values"
+        ) from None
 
 
 def _mapping(document: dict[str, Any], name: str) -> dict[str, Any]:
@@ -99,8 +88,6 @@ def _mapping(document: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def validate_runtime_settings(settings: Settings) -> Settings:
-    if not settings.admin_emails:
-        raise ConfigurationError("admins.emails must contain at least one administrator email")
     if settings.smtp_host and not settings.email_from:
         raise ConfigurationError("smtp.from is required when SMTP is configured")
     if settings.email_from and not settings.smtp_host:

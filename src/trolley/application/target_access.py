@@ -1,26 +1,28 @@
-"""Target grants authorize exploration, never Operation publication."""
+"""Group membership is the only Target boundary, including for administrators."""
 
 from trolley.auth.context import AuthContext
-from trolley.auth.roles import normalize_email
 from trolley.domain.users import UserRole
-from trolley.persistence.models import Group, GroupTargetGrant, Target, TargetGrant, User
+from trolley.persistence.models import Group, GroupTargetGrant, Target, User
+
+
+async def member_target_names(context: AuthContext) -> set[str]:
+    user = await User.get_or_none(id=context.user_id, is_active=True)
+    if user is None:
+        return set()
+    return set(
+        await GroupTargetGrant.filter(
+            group__memberships__user=user, target__is_active=True
+        ).values_list("target__name", flat=True)
+    )
 
 
 async def accessible_target_names(context: AuthContext) -> set[str]:
     user = await User.get_or_none(id=context.user_id, is_active=True)
-    if user is None:
+    if user is None or context.role not in (UserRole.ADMIN, UserRole.DEVELOPER):
         return set()
-    if context.role == UserRole.ADMIN and user.role == UserRole.ADMIN:
-        return set(await Target.filter(is_active=True).values_list("name", flat=True))
-    if context.role != UserRole.DEVELOPER or user.role != UserRole.DEVELOPER:
+    if user.role != context.role:
         return set()
-    direct = await TargetGrant.filter(user=user, target__is_active=True).values_list(
-        "target__name", flat=True
-    )
-    grouped = await GroupTargetGrant.filter(
-        group__memberships__user=user, target__is_active=True
-    ).values_list("target__name", flat=True)
-    return set(direct) | set(grouped)
+    return await member_target_names(context)
 
 
 async def require_target(context: AuthContext, name: str) -> Target:
@@ -30,30 +32,19 @@ async def require_target(context: AuthContext, name: str) -> Target:
 
 
 async def set_target_access(
-    name: str,
-    allowed: bool,
-    email: str | None = None,
-    group_name: str | None = None,
+    name: str, allowed: bool, email: str | None = None, group_name: str | None = None
 ) -> dict:
-    """Admin-only MCP entry point; grants do not assign the developer role."""
-    if bool(email) == bool(group_name):
-        raise ValueError("Provide exactly one of email or group_name")
+    """Local operator only. Direct user grants are no longer supported."""
+    if email is not None or not group_name:
+        raise ValueError("Target access requires a group; direct user grants are unsupported")
     target = await Target.get(name=name, is_active=True)
-    if email:
-        user = await User.get(email=normalize_email(email), is_active=True)
-        model, principal = TargetGrant, {"user": user}
-    else:
-        group = await Group.get(name=group_name.strip())
-        model, principal = GroupTargetGrant, {"group": group}
+    group = await Group.get(name=group_name.strip())
     if allowed:
-        await model.get_or_create(target=target, **principal)
+        await GroupTargetGrant.get_or_create(target=target, group=group)
     else:
-        await model.filter(target=target, **principal).delete()
-    return {"target": name, "email": email, "group_name": group_name, "allowed": allowed}
+        await GroupTargetGrant.filter(target=target, group=group).delete()
+    return {"target": name, "group_name": group_name, "allowed": allowed}
 
 
 async def list_target_grants() -> dict:
-    return {
-        "users": await TargetGrant.all().values("target__name", "user__email"),
-        "groups": await GroupTargetGrant.all().values("target__name", "group__name"),
-    }
+    return {"groups": await GroupTargetGrant.all().values("target__name", "group__name")}

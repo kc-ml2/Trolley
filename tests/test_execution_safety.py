@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from access_helpers import allow
 from fastapi.testclient import TestClient
 
 from trolley.application.execution import execute_operation
@@ -21,7 +22,6 @@ from trolley.serialization import json_value
 def test_result_serialization_and_audit_failures(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://example/test"}},
     )
     connector = AsyncMock(
@@ -32,7 +32,12 @@ def test_result_serialization_and_audit_failures(tmp_path, monkeypatch):
 
         async def scenario():
             await create_operation("report", "db", {"data_scope": "shared", "sql": "select 1"})
-            root = await User.get(email="root@example.com")
+            root = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
+            await allow(root, "db")
             context = AuthContext(
                 user_id=str(root.id), api_key_id=str(uuid4()), role=UserRole.ADMIN
             )

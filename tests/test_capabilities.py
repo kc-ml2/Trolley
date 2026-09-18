@@ -15,7 +15,6 @@ from trolley.persistence.models import User
 def test_capabilities_follow_authenticated_discovery(tmp_path):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
     )
     app = create_app(settings)
     with TestClient(app) as client:
@@ -26,10 +25,14 @@ def test_capabilities_follow_authenticated_discovery(tmp_path):
             with pytest.raises(ToolError, match="Authentication required"):
                 await tool.fn()
             member = await User.create(email="member@example.com", name="Member")
-            root = await User.get(email="root@example.com")
+            root = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
             for user in (member, root):
                 _, secret = await create_api_key(user, "test")
-                token = await TrolleyTokenVerifier(settings.admin_emails).verify_token(secret)
+                token = await TrolleyTokenVerifier().verify_token(secret)
                 ctx = auth_context_var.set(AuthenticatedUser(token))
                 try:
                     result = await tool.fn()

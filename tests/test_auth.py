@@ -1,3 +1,4 @@
+from access_helpers import allow
 from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
@@ -14,10 +15,8 @@ from trolley.mcp.token_verifier import TrolleyTokenVerifier
 from trolley.persistence.models import Target, User
 
 
-async def authenticated(
-    secret: str, admin_emails: frozenset[str] = frozenset()
-) -> AuthenticatedUser:
-    token = await TrolleyTokenVerifier(admin_emails).verify_token(secret)
+async def authenticated(secret: str) -> AuthenticatedUser:
+    token = await TrolleyTokenVerifier().verify_token(secret)
     assert token is not None
     return AuthenticatedUser(token)
 
@@ -25,7 +24,6 @@ async def authenticated(
 def test_bearer_auth_and_operation_access(tmp_path, monkeypatch) -> None:
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
     )
     with TestClient(create_app(settings)) as client:
 
@@ -35,7 +33,7 @@ def test_bearer_auth_and_operation_access(tmp_path, monkeypatch) -> None:
             _, admin_secret = await create_api_key(admin, "test")
             user_key, user_secret = await create_api_key(user, "test")
 
-            admin_auth = await authenticated(admin_secret, frozenset({"admin@example.com"}))
+            admin_auth = await authenticated(admin_secret)
             user_auth = await authenticated(user_secret)
             assert "trolley:admin" in admin_auth.scopes
             assert "trolley:admin" not in user_auth.scopes
@@ -44,8 +42,12 @@ def test_bearer_auth_and_operation_access(tmp_path, monkeypatch) -> None:
             await operations.create_operation(
                 "revenue", "payments", {"data_scope": "shared", "sql": "select 1"}
             )
+            await Target.create(name="private", kind="postgresql")
+            await allow(user, "payments")
+            await allow(admin, "payments")
+            await allow(admin, "private")
             await operations.create_operation(
-                "profit", "payments", {"data_scope": "shared", "sql": "select 2"}, access="admin"
+                "profit", "private", {"data_scope": "shared", "sql": "select 2"}
             )
             user_context = AuthContext(
                 user_id=str(user.id), api_key_id=str(user_key.id), role=UserRole.USER

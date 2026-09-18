@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock
 
+from access_helpers import allow
 from fastapi.testclient import TestClient
 
 from trolley.application.execution import execute_operation
@@ -15,7 +16,6 @@ def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
         targets={"customers": {"kind": "postgresql", "url": "postgresql://example/test"}},
-        admin_emails=frozenset({"root@example.com"}),
     )
     connector = AsyncMock(return_value={"rows": [{"id": 42}]})
     monkeypatch.setattr("trolley.application.execution.database.execute", connector)
@@ -39,6 +39,7 @@ def test_executes_registered_postgresql_operation(tmp_path, monkeypatch) -> None
                 },
             )
             user = await User.create(email="user@example.com", name="User")
+            await allow(user, "customers")
             context = AuthContext(
                 user_id=str(user.id),
                 api_key_id="00000000-0000-0000-0000-000000000002",

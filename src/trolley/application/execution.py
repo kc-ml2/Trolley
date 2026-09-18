@@ -3,8 +3,6 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from jsonschema import validate
-
 from trolley.application.access import can_access_operation
 from trolley.application.pagination import next_page, resolve_page
 from trolley.auth.context import AuthContext
@@ -13,6 +11,7 @@ from trolley.domain.operations import ExecutionStatus
 from trolley.persistence.models import Execution, ExecutionPage, Operation, User
 from trolley.serialization import json_value
 from trolley.targets import get_targets
+from trolley.validation.arguments import validate_arguments
 from trolley.validation.caller import compile_definition
 from trolley.validation.operations import validate_definition
 
@@ -51,7 +50,7 @@ async def execute_operation(
     bindings = compiled.get("bindings", {})
     if set(arguments) & set(bindings):
         raise ValueError("Server-bound parameters cannot be supplied by the client")
-    validate(instance=arguments, schema=operation.input_schema)
+    validate_arguments(arguments, operation.input_schema)
     if bindings:
         user = await User.get(id=context.user_id, is_active=True)
         arguments.update({name: user.email for name in bindings})

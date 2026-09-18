@@ -3,8 +3,7 @@ from typing import Any
 from tortoise.transactions import in_transaction
 
 from trolley.auth.roles import normalize_email
-from trolley.domain.operations import OperationAccess
-from trolley.persistence.models import Group, GroupMembership, GroupOperationGrant, Operation, User
+from trolley.persistence.models import Group, GroupMembership, User
 
 
 async def resolve_groups(names: list[str]) -> list[Group]:
@@ -63,33 +62,4 @@ async def list_group_memberships(
         query = query.filter(group__name=group_name.strip())
     return await query.order_by("group__name", "user__email").values(
         group="group__name", email="user__email"
-    )
-
-
-async def grant_group_operation(group_name: str, operation_name: str) -> dict:
-    group = (await resolve_groups([group_name]))[0]
-    operation = await Operation.get(name=operation_name, is_active=True, target__is_active=True)
-    if operation.access == OperationAccess.ADMIN:
-        raise ValueError("Admin operations cannot be granted to groups")
-    await GroupOperationGrant.get_or_create(group=group, operation=operation)
-    return {"group": group.name, "operation": operation.name}
-
-
-async def revoke_group_operation(group_name: str, operation_name: str) -> dict:
-    group = (await resolve_groups([group_name]))[0]
-    operation = await Operation.get(name=operation_name)
-    deleted = await GroupOperationGrant.filter(group=group, operation=operation).delete()
-    return {"group": group.name, "operation": operation.name, "revoked": bool(deleted)}
-
-
-async def list_group_operation_grants(
-    group_name: str | None = None, operation_name: str | None = None
-) -> list[dict]:
-    query = GroupOperationGrant.all()
-    if group_name is not None:
-        query = query.filter(group__name=group_name.strip())
-    if operation_name is not None:
-        query = query.filter(operation__name=operation_name)
-    return await query.order_by("group__name", "operation__name").values(
-        group="group__name", operation="operation__name"
     )

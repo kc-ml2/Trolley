@@ -3,6 +3,7 @@ import gzip
 from unittest.mock import AsyncMock
 
 import pytest
+from access_helpers import allow, revoke
 from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
@@ -11,16 +12,14 @@ from mcp.server.mcpserver.exceptions import ToolError
 from trolley.application.operations import create_operation
 from trolley.auth.api_keys import create_api_key
 from trolley.config import ExportSettings, Settings
-from trolley.domain.users import UserRole
 from trolley.main import create_app
 from trolley.mcp.token_verifier import TrolleyTokenVerifier
-from trolley.persistence.models import ExportJob, OperationGrant, User
+from trolley.persistence.models import ExportJob, User
 
 
 def test_file_operation_dispatch_and_status(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://unused/test"}},
         exports=ExportSettings(directory=str(tmp_path / "exports")),
     )
@@ -52,18 +51,17 @@ def test_file_operation_dispatch_and_status(tmp_path, monkeypatch):
                     "ownership": {"column": "email", "identity": "authenticated_user.email"},
                     "output": "file",
                 },
-                access="restricted",
             )
             from trolley.persistence.models import Operation
 
-            operation = await Operation.get(id=file_op["id"])
-            await OperationGrant.create(user=member, operation=operation)
+            assert await Operation.exists(id=file_op["id"])
+            await allow(member, "db")
             await create_operation("summary", "db", {"data_scope": "shared", "sql": "select 1"})
             await server.registry.load()
 
             async def login(user):
                 _, secret = await create_api_key(user, "test")
-                token = await TrolleyTokenVerifier(settings.admin_emails).verify_token(secret)
+                token = await TrolleyTokenVerifier().verify_token(secret)
                 return auth_context_var.set(AuthenticatedUser(token))
 
             async def call(tool_name, **kwargs):
@@ -104,12 +102,19 @@ def test_file_operation_dispatch_and_status(tmp_path, monkeypatch):
                 assert status["output"] == "inline"
                 assert status["status"] == "succeeded"
                 assert "result" not in status
-                await OperationGrant.filter(user=member).delete()
+                await revoke(member)
                 with pytest.raises(ToolError, match="access denied"):
                     await call("get_execution", execution_id=started["execution_id"])
             finally:
                 auth_context_var.reset(ctx)
-            for user in (other, await User.get(role=UserRole.ADMIN)):
+            for user in (
+                other,
+                (
+                    await User.get_or_create(
+                        email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                    )
+                )[0],
+            ):
                 ctx = await login(user)
                 try:
                     with pytest.raises(ToolError, match="not found"):

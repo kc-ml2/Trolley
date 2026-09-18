@@ -10,27 +10,24 @@ from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
 from trolley.application import (
-    grants,
-    groups,
     operations,
     queries,
     target_access,
     targets,
-    users,
 )
 from trolley.application.access import accessible_operation_names
 from trolley.application.execution import execute_operation
 from trolley.application.execution_status import get_execution as execution_status
 from trolley.auth.context import AuthContext
 from trolley.config import Settings
-from trolley.domain.operations import OperationAccess
-from trolley.domain.users import UserOperationAccess, UserRole
+from trolley.domain.users import UserRole
 from trolley.email import EmailService
 from trolley.mcp.constants import AUTH_CONTEXT_PARAMETER, SYSTEM_TOOL_POLICIES
 from trolley.mcp.enums import SystemToolName
 from trolley.mcp.pipeline import current_tool_context, validate_tool
 from trolley.mcp.registry import DynamicToolRegistry
 from trolley.mcp.token_verifier import TrolleyTokenVerifier
+from trolley.persistence.models import Operation
 
 
 class TrolleyMCPServer(MCPServer):
@@ -95,12 +92,10 @@ class TrolleyMCPServer(MCPServer):
 
 def create_mcp_server(
     public_base_url: str = "http://localhost:8000",
-    admin_emails: frozenset[str] = frozenset(),
     settings: Settings | None = None,
 ) -> TrolleyMCPServer:
     base_url = public_base_url.rstrip("/")
     email_service = EmailService(settings or Settings())
-    onboarding_url = f"{base_url}/onboarding.md"
     server = TrolleyMCPServer(
         name="trolley",
         title="Trolley",
@@ -111,7 +106,7 @@ def create_mcp_server(
             "you lack administrator access. Administrators can inspect Targets and create "
             "Operations using their available system tools. Developers and administrators "
             "can use query_target for read-only exploration without creating Operations. "
-            "Developers need explicit Target grants and cannot publish Operations. "
+            "All roles require group Target access; developers cannot publish Operations. "
             "Only administrators create, modify, and share Operations. "
             "Trolley operations may change at runtime. Call list_operations to discover "
             "the operations currently available to you. Use "
@@ -135,7 +130,7 @@ def create_mcp_server(
             "or omissions. Do not paginate writes."
         ),
         version="0.1.0",
-        token_verifier=TrolleyTokenVerifier(admin_emails),
+        token_verifier=TrolleyTokenVerifier(),
         auth=AuthSettings(
             issuer_url=base_url,
             resource_server_url=f"{base_url}/mcp",
@@ -186,7 +181,8 @@ def create_mcp_server(
             "system_tools": names,
             "guidance": (
                 "You have administrator access. Use the available system tools below "
-                "to inspect databases, create Operations, and manage users, groups, and grants."
+                "to inspect group-accessible databases and create Operations. "
+                "Identity and access management use CLI only."
                 if auth_context.role == UserRole.ADMIN
                 else "You can inspect and query granted Targets, and run accessible Operations. "
                 "Only administrators can publish Operations."
@@ -199,113 +195,6 @@ def create_mcp_server(
                 "An empty result does not mean you lack administrator access."
             ),
         }
-
-    server.system_tool(SystemToolName.CREATE_GROUP, description="Create a group (admin)")(
-        groups.create_group
-    )
-    server.system_tool(SystemToolName.LIST_GROUPS, description="List groups (admin)")(
-        groups.list_groups
-    )
-    server.system_tool(SystemToolName.UPDATE_GROUP, description="Update group description (admin)")(
-        groups.update_group
-    )
-    server.system_tool(
-        SystemToolName.DELETE_GROUP,
-        description="Delete group and its memberships and grants (admin)",
-    )(groups.delete_group)
-    server.system_tool(
-        SystemToolName.SET_USER_GROUPS,
-        description="Replace all user group memberships; empty list removes all (admin)",
-    )(groups.set_user_groups)
-    server.system_tool(
-        SystemToolName.LIST_GROUP_MEMBERSHIPS, description="List group memberships (admin)"
-    )(groups.list_group_memberships)
-    server.system_tool(
-        SystemToolName.GRANT_GROUP_OPERATION,
-        description="Grant a non-admin operation to a group (admin)",
-    )(groups.grant_group_operation)
-    server.system_tool(
-        SystemToolName.REVOKE_GROUP_OPERATION,
-        description="Revoke a group's operation grant (admin)",
-    )(groups.revoke_group_operation)
-    server.system_tool(
-        SystemToolName.LIST_GROUP_OPERATION_GRANTS,
-        description="List group operation grants (admin)",
-    )(groups.list_group_operation_grants)
-
-    @server.system_tool(SystemToolName.LIST_USERS, description="List users (admin)")
-    async def list_users() -> list[dict]:
-        return await users.list_users()
-
-    @server.system_tool(SystemToolName.CREATE_USER, description="Create a user (admin)")
-    async def create_user(
-        email: str,
-        name: str,
-        role: UserRole = UserRole.USER,
-        group_names: list[str] | None = None,
-    ) -> dict:
-        return await users.create_user(
-            email, name, role, admin_emails=admin_emails, group_names=group_names
-        )
-
-    @server.system_tool(
-        SystemToolName.INVITE_USER,
-        description=(
-            "Create or reuse a user and email a one-time Trolley API key (admin). "
-            "Emails in admins.emails receive the admin role."
-        ),
-    )
-    async def invite_user(
-        email: str,
-        name: str,
-        key_name: str = "initial-access",
-        group_names: list[str] | None = None,
-    ) -> dict:
-        return await users.invite_user(
-            email,
-            name,
-            key_name,
-            email_service,
-            onboarding_url,
-            admin_emails=admin_emails,
-            group_names=group_names,
-        )
-
-    @server.system_tool(
-        SystemToolName.UPDATE_USER_ACCESS,
-        description="Set whether a user sees public or only assigned operations (admin)",
-    )
-    async def update_user_access(
-        email: str,
-        operation_access: UserOperationAccess,
-    ) -> dict:
-        return await users.update_user_access(email, operation_access)
-
-    @server.system_tool(SystemToolName.LIST_API_KEYS, description="List a user's API keys (admin)")
-    async def list_api_keys(email: str) -> list[dict]:
-        return await users.list_api_keys(email)
-
-    @server.system_tool(
-        SystemToolName.CREATE_API_KEY,
-        description="Issue a Bearer API key; secret is returned once (admin)",
-    )
-    async def create_api_key(email: str, name: str) -> dict:
-        return await users.issue_api_key(email, name)
-
-    @server.system_tool(SystemToolName.SET_USER_ROLE, description="Assign a user role (admin)")
-    async def set_user_role(email: str, role: UserRole) -> dict:
-        return await users.set_user_role(email, role, admin_emails=admin_emails)
-
-    server.system_tool(
-        SystemToolName.SET_TARGET_ACCESS,
-        description=(
-            "Grant/revoke Target exploration for a user or group (admin). "
-            "Requires developer role to use."
-        ),
-    )(target_access.set_target_access)
-    server.system_tool(SystemToolName.LIST_TARGET_GRANTS, description="List Target grants (admin)")(
-        target_access.list_target_grants
-    )
 
     if settings is not None:
         from trolley.application import target_notes
@@ -388,10 +277,17 @@ def create_mcp_server(
     async def list_operations(*, auth_context: AuthContext) -> list[dict]:
         return await operations.list_operations(auth_context)
 
+    async def require_operation_target(name: str, context: AuthContext) -> None:
+        operation = await Operation.get_or_none(name=name).prefetch_related("target")
+        if operation is None:
+            raise PermissionError("Operation unavailable or access denied")
+        await target_access.require_target(context, operation.target.name)
+
     @server.system_tool(
         SystemToolName.CREATE_OPERATION,
         description=(
-            "Register and immediately expose a dynamic operation (admin). "
+            "Publish an Operation to ALL members of groups with access to its Target (admin). "
+            "No per-Operation access policy. "
             "definition.data_scope is required: 'caller' for personal data, 'shared' for "
             "explicitly shared results. Caller definitions forbid SQL/parameters/bindings: use "
             "source={schema,relation}, columns=[column names], "
@@ -422,11 +318,13 @@ def create_mcp_server(
         target_name: str,
         definition: dict,
         description: str = "",
-        access: OperationAccess = OperationAccess.PUBLIC,
         input_schema: dict | None = None,
+        *,
+        auth_context: AuthContext,
     ) -> dict:
+        await target_access.require_target(auth_context, target_name)
         result = await operations.create_operation(
-            name, target_name, definition, description, access, input_schema
+            name, target_name, definition, description, input_schema=input_schema
         )
         await server.registry.reload(name)
         return result
@@ -443,14 +341,15 @@ def create_mcp_server(
     async def update_operation(
         name: str,
         description: str | None = None,
-        access: OperationAccess | None = None,
         input_schema: dict | None = None,
         definition: dict | None = None,
+        *,
+        auth_context: AuthContext,
     ) -> dict:
+        await require_operation_target(name, auth_context)
         result = await operations.update_operation(
             name,
             description=description,
-            access=access,
             input_schema=input_schema,
             definition=definition,
         )
@@ -461,34 +360,11 @@ def create_mcp_server(
         SystemToolName.DISABLE_OPERATION,
         description="Disable and remove a dynamic operation (admin)",
     )
-    async def disable_operation(name: str) -> dict:
+    async def disable_operation(name: str, *, auth_context: AuthContext) -> dict:
+        await require_operation_target(name, auth_context)
         result = await operations.disable_operation(name)
         await server.registry.reload(name)
         return result
-
-    @server.system_tool(
-        SystemToolName.GRANT_OPERATION,
-        description="Grant a non-admin operation to a user (admin)",
-    )
-    async def grant_operation(email: str, operation_name: str) -> dict:
-        return await grants.grant_operation(email, operation_name)
-
-    @server.system_tool(
-        SystemToolName.REVOKE_OPERATION,
-        description="Revoke an operation from a user (admin)",
-    )
-    async def revoke_operation(email: str, operation_name: str) -> dict:
-        return await grants.revoke_operation(email, operation_name)
-
-    @server.system_tool(
-        SystemToolName.LIST_OPERATION_GRANTS,
-        description="List operation grants, optionally filtered (admin)",
-    )
-    async def list_operation_grants(
-        operation_name: str | None = None,
-        email: str | None = None,
-    ) -> list[dict]:
-        return await grants.list_operation_grants(operation_name, email)
 
     @server.system_tool(
         SystemToolName.EXECUTE,
@@ -524,10 +400,9 @@ def create_mcp_server(
 
 def create_mcp_app(
     public_base_url: str = "http://localhost:8000",
-    admin_emails: frozenset[str] = frozenset(),
     settings: Settings | None = None,
 ) -> Starlette:
-    server = create_mcp_server(public_base_url, admin_emails, settings)
+    server = create_mcp_server(public_base_url, settings)
     app = server.streamable_http_app(
         streamable_http_path="/",
         stateless_http=True,

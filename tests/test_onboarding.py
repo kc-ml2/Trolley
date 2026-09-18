@@ -8,7 +8,6 @@ def settings(tmp_path) -> Settings:
     return Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
         public_base_url="https://trolley.example.com/root/",
-        admin_emails=frozenset({"admin@example.com"}),
     )
 
 

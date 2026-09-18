@@ -36,7 +36,7 @@ Example `definition` for Heimdall (validate the actual key/log relationship firs
 }
 ```
 
-Use `access: restricted` initially, and the following `input_schema`:
+All group members with Target access may run the Operation. Use this `input_schema`:
 
 ```json
 {
@@ -76,5 +76,4 @@ Raw SQL, bindings, expressions and arbitrary functions are rejected.
 - Pagination must order by a unique combination of grouping dimensions. Queries
   without dimensions return a single aggregate row (zero counts when no match).
 
-Creating the Operation does not modify the Target schema. Grant execution access
-only after reviewing the definition and testing owner isolation.
+Creating the Operation does not modify the Target schema. Review group Target membership, the definition and owner isolation before publication.

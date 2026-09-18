@@ -1,3 +1,4 @@
+from access_helpers import allow
 from fastapi.testclient import TestClient
 
 from trolley.application.operations import create_operation, list_operations
@@ -5,13 +6,12 @@ from trolley.auth.context import AuthContext
 from trolley.config import Settings
 from trolley.domain.users import UserRole
 from trolley.main import create_app
-from trolley.persistence.models import Target
+from trolley.persistence.models import Target, User
 
 
 def test_target_and_operation_catalog(tmp_path) -> None:
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
     )
     with TestClient(create_app(settings)) as client:
 
@@ -35,7 +35,13 @@ def test_target_and_operation_catalog(tmp_path) -> None:
             )
             assert operation["target"] == "customers"
             assert await Target.all().count() == 1
-            context = AuthContext(user_id="admin", api_key_id="key", role=UserRole.ADMIN)
+            user = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
+            await allow(user, "customers")
+            context = AuthContext(user_id=str(user.id), api_key_id="key", role=UserRole.ADMIN)
             assert len(await list_operations(context)) == 1
 
         client.portal.call(scenario)

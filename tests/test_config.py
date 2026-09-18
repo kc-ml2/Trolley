@@ -33,7 +33,6 @@ targets:
 
     assert settings.public_base_url == "https://trolley.example.com"
     assert settings.database_url == "sqlite:///data/trolley.db"
-    assert settings.admin_emails == frozenset({"admin@example.com", "ops@example.com"})
     assert settings.smtp_host == "smtp.gmail.com"
     assert settings.smtp_password.get_secret_value() == "app-password"
     assert settings.targets["reporting"]["kind"] == "postgresql"
@@ -44,21 +43,19 @@ def test_config_file_environment_variable_selects_yaml(tmp_path, monkeypatch) ->
     path.write_text("admins:\n  emails: [admin@example.com]\n")
     monkeypatch.setenv("TROLLEY_CONFIG_FILE", str(path))
 
-    assert load_settings().admin_emails == frozenset({"admin@example.com"})
+    assert load_settings().database_url
 
 
 def test_email_from_is_required_when_smtp_is_configured() -> None:
     settings = Settings(
-        admin_emails=frozenset({"admin@example.com"}),
         smtp_host="smtp.example.com",
     )
     with pytest.raises(ConfigurationError, match="smtp.from"):
         validate_runtime_settings(settings)
 
 
-def test_runtime_settings_require_admin_email() -> None:
-    with pytest.raises(ConfigurationError, match="admins.emails"):
-        validate_runtime_settings(Settings())
+def test_runtime_settings_allow_empty_users() -> None:
+    assert validate_runtime_settings(Settings())
 
 
 def test_missing_config_file_is_reported(tmp_path) -> None:

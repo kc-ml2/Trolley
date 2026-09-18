@@ -73,7 +73,7 @@ class DynamicToolRegistry:
                 if operation.definition.get("pagination") is not None
                 else ""
             ),
-            meta={"dynamic": True, "access": str(operation.access)},
+            meta={"dynamic": True, "authorization": "group_target"},
         )
         registered = self.server._tool_manager.get_tool(operation.name)
         if registered is None:

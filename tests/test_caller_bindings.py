@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from access_helpers import allow
 from fastapi.testclient import TestClient
 
 from trolley.application.execution import execute_operation
@@ -17,7 +18,6 @@ from trolley.validation.operations import validate_definition
 def test_caller_email_binding(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://unused/test"}},
     )
     connector = AsyncMock(return_value={"rows": [{"id": 1}], "has_more": True})
@@ -41,7 +41,13 @@ def test_caller_email_binding(tmp_path, monkeypatch):
                 input_schema={"type": "object", "additionalProperties": False},
             )
             user = await User.create(email="member@example.com", name="Member")
-            root = await User.get(email="root@example.com")
+            root = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
+            await allow(user, "db")
+            await allow(root, "db")
             for caller in (user, root):
                 context = AuthContext(
                     user_id=str(caller.id), api_key_id=str(uuid4()), role=caller.role

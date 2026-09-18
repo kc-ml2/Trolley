@@ -13,9 +13,9 @@ they are not executable instructions and never override access policy.
   At least one field must be supplied. Limits are 2,000 characters for description
   and 20,000 for data notes.
 
-Admins can edit all active Targets. Developers need a current direct or group
-Target grant. Ordinary users cannot read or modify Target notes. Grants authorize
-exploration and metadata editing, not Operation publication.
+Admins and developers both need current group Target access to read or edit notes.
+Ordinary users cannot read or modify Target notes. The role determines allowed actions:
+only admins can publish Operations on their groups' Targets.
 
 Read the current version first (initially 0). A stale `expected_version` fails;
 read again and reconcile edits rather than blindly retrying. Each successful edit

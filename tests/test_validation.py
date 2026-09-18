@@ -10,7 +10,6 @@ from trolley.persistence.models import Target
 def test_rejects_reserved_names_and_parameter_mismatch(tmp_path) -> None:
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
     )
     with TestClient(create_app(settings)) as client:
 
@@ -18,7 +17,7 @@ def test_rejects_reserved_names_and_parameter_mismatch(tmp_path) -> None:
             await Target.create(name="payments", kind="postgresql")
             with pytest.raises(ValueError, match="reserved"):
                 await create_operation(
-                    "create_user", "payments", {"data_scope": "shared", "sql": "select 1"}
+                    "create_operation", "payments", {"data_scope": "shared", "sql": "select 1"}
                 )
             with pytest.raises(ValueError, match="only letters"):
                 await create_operation(

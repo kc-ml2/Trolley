@@ -2,6 +2,21 @@
 
 [← README](../README.md)
 
+## Configuration files
+
+| File | Read by | Purpose |
+| --- | --- | --- |
+| `.trolley-postgres.env` | Compose's PostgreSQL container | Initial catalog DB name, DB role and password |
+| `trolley.yaml` | Trolley application | Catalog connection URL, Target connections, SMTP and public URL |
+| `compose.override.yaml` | Docker Compose, optional | Machine-specific networks or config-file group access |
+
+The dot-prefixed `.trolley-postgres.env` is not an API-key file and does not configure
+Heimdall or SceneSense. Trolley does not load it directly. Its `POSTGRES_USER` is a
+PostgreSQL login, not a Trolley user or admin. Keep its password identical to the
+catalog URL password in `trolley.yaml`. Both are private and excluded from Git.
+The application's YAML does not substitute environment variables. A generic `.env`
+file is not required by this setup.
+
 ## Quick start
 
 Requires Docker with Compose. From this repository:
@@ -11,7 +26,7 @@ cp -n trolley.docker.example.yaml trolley.yaml
 # Generate a password, e.g. openssl rand -hex 32; store it privately.
 # Create .trolley-postgres.env as below, then edit trolley.yaml.
 docker compose up -d --build
-docker compose exec trolley trolley admin issue-key admin@example.com
+docker compose exec trolley trolley operator add-user
 ```
 
 Before starting, create `.trolley-postgres.env` (mode `0600`):
@@ -25,7 +40,7 @@ POSTGRES_PASSWORD=REPLACE_WITH_RANDOM_PASSWORD
 Set the same password in `trolley.yaml`'s `catalog.database_url`:
 `postgres://trolley:REPLACE_WITH_RANDOM_PASSWORD@postgres:5432/trolley`.
 Use a URL-safe password (hex is suitable); YAML does not interpolate environment
-variables. Set `admins.emails` and your actual PostgreSQL `targets`. No sample
+variables. Configure your actual PostgreSQL `targets`. No sample
 query Target is provisioned. An empty `targets: {}` is allowed.
 
 The config must be readable by container UID/GID `10001`. On Linux, set group
@@ -33,10 +48,10 @@ The config must be readable by container UID/GID `10001`. On Linux, set group
 `compose.override.yaml` and give that group read access. Do not make it world-readable.
 The config is mounted read-only at `/etc/trolley/trolley.yaml`.
 
-Use an allowlisted administrator email to issue the key. Enter the printed key
-privately in the client's authentication settings, never in chat. Alternatively,
-with SMTP configured, run `docker compose exec trolley trolley setup admin@example.com`
-to email it. Every issuance creates a new key; previous keys remain valid.
+Run the interactive wizard in a terminal to create the first account, role, group
+and Target associations. No users or groups are created at startup. Invitation
+requires an existing account and never changes its privileges. See
+[operator wizard](operator-wizard.md).
 
 - MCP: `http://localhost:7500/mcp/`
 - Onboarding: `http://localhost:7500/onboarding.md`
@@ -72,7 +87,7 @@ networks:
 
 PostgreSQL initialization only applies to an empty volume. Changing the env file
 alone does not rotate an existing password; use `ALTER ROLE` and update the catalog
-URL. Legacy `docker/postgres/init.sql` is not mounted by the current Compose setup.
+URL. No sample Target database initialization script is included.
 
 ## Personal data and files
 
@@ -83,7 +98,7 @@ through caller Operations. Review ownership mappings; sharing a key shares acces
 See [the personal data contract](caller-data.md).
 
 Fixed `output` is `inline` or `file`. File Operations generate JSONL.gz; poll
-`get_execution(execution_id)`. Direct developer SQL requires Target grants and is
+`get_execution(execution_id)`. Direct admin/developer SQL requires group Target access and is
 read-only, but has no automatic caller filter.
 
 ## Operate
@@ -103,7 +118,7 @@ docker compose down                            # Stop, preserve volumes
   for CLI actions, not arguments appended to the image entrypoint.
 - Config is read-only, Trolley is non-root, and data persists in `postgres-data`
   and `trolley-data`. Never use `docker compose down -v` unless deleting data is intended.
-- Keep `.env`, `.trolley-postgres.env`, `trolley.yaml`, overrides and backups private.
+- Keep `.trolley-postgres.env`, `trolley.yaml`, overrides and backups private.
   Back up PostgreSQL and config separately. Schema generation does not migrate
   existing tables; review changes before upgrading. Multiple workers are unsupported.
 

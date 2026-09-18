@@ -3,7 +3,6 @@ from typing import Any
 from trolley.application.access import accessible_operation_names
 from trolley.application.presenters import present_operation
 from trolley.auth.context import AuthContext
-from trolley.domain.operations import OperationAccess
 from trolley.domain.users import UserRole
 from trolley.persistence.models import Operation, Target
 from trolley.validation.operations import (
@@ -31,7 +30,6 @@ async def create_operation(
     target_name: str,
     definition: dict[str, Any],
     description: str = "",
-    access: OperationAccess = OperationAccess.PUBLIC,
     input_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     target = await Target.get(name=target_name)
@@ -41,7 +39,6 @@ async def create_operation(
         name=validate_operation_name(name),
         target=target,
         description=description,
-        access=access,
         input_schema=input_schema,
         definition=definition,
     )
@@ -53,15 +50,12 @@ async def update_operation(
     name: str,
     *,
     description: str | None = None,
-    access: OperationAccess | None = None,
     input_schema: dict[str, Any] | None = None,
     definition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     operation = await Operation.get(name=name).prefetch_related("target")
     if description is not None:
         operation.description = description
-    if access is not None:
-        operation.access = access
     next_schema = (
         validate_input_schema(input_schema) if input_schema is not None else operation.input_schema
     )

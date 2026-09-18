@@ -5,8 +5,8 @@ from tortoise.transactions import in_transaction
 from trolley.application.groups import resolve_groups
 from trolley.application.presenters import present_api_key, present_user
 from trolley.auth.api_keys import create_api_key
-from trolley.auth.roles import normalize_email, validate_role_assignment
-from trolley.domain.users import UserOperationAccess, UserRole
+from trolley.auth.roles import normalize_email
+from trolley.domain.users import UserRole
 from trolley.email import EmailService
 from trolley.invitation import invitation
 from trolley.persistence.models import ApiKey, GroupMembership, User
@@ -21,11 +21,9 @@ async def create_user(
     name: str,
     role: UserRole = UserRole.USER,
     *,
-    admin_emails: frozenset[str] = frozenset(),
     group_names: list[str] | None = None,
 ) -> dict[str, Any]:
     email = normalize_email(email)
-    validate_role_assignment(email, role, admin_emails)
     async with in_transaction():
         selected = await resolve_groups(group_names or [])
         user = await User.create(email=email, name=name.strip(), role=role)
@@ -41,25 +39,17 @@ async def invite_user(
     email_service: EmailService,
     onboarding_url: str,
     *,
-    admin_emails: frozenset[str] = frozenset(),
     group_names: list[str] | None = None,
 ) -> dict[str, Any]:
     selected = await resolve_groups(group_names or [])
     email = normalize_email(email)
     user = await User.get_or_none(email=email)
-    role = (
-        UserRole.ADMIN
-        if email in admin_emails
-        else UserRole.DEVELOPER
-        if user is not None and user.role == UserRole.DEVELOPER
-        else UserRole.USER
-    )
     if user is None:
-        user = await User.create(email=email, name=name.strip(), role=UserRole.USER)
-    elif not user.is_active:
+        raise ValueError("Create the user with operator add-user or create-user before inviting")
+    if not user.is_active:
         raise ValueError("Only an active user can be invited")
-    elif user.role == UserRole.ADMIN and role != UserRole.ADMIN:
-        raise PermissionError("Admin email is not in admins.emails")
+    if group_names:
+        raise ValueError("Invitation does not change groups; use operator set-groups")
 
     # Deliver an inactive key. Only activate it together with the role and
     # memberships after delivery; crashes/failures leave no usable new key.
@@ -77,8 +67,6 @@ async def invite_user(
     async with in_transaction():
         user = await User.filter(id=user.id, is_active=True).select_for_update().get()
         selected = await resolve_groups(group_names or [])
-        user.role = role
-        await user.save(update_fields=["role"])
         for group in selected:
             await GroupMembership.get_or_create(user=user, group=group)
         key.is_active = True
@@ -98,26 +86,11 @@ async def invite_user(
 async def set_user_role(
     email: str,
     role: UserRole,
-    *,
-    admin_emails: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     email = normalize_email(email)
-    validate_role_assignment(email, role, admin_emails)
     user = await User.get(email=email, is_active=True)
-    if user.role == UserRole.ADMIN:
-        raise PermissionError("Manage administrator roles through server configuration")
     user.role = role
     await user.save(update_fields=["role"])
-    return present_user(user)
-
-
-async def update_user_access(
-    email: str,
-    operation_access: UserOperationAccess,
-) -> dict[str, Any]:
-    user = await User.get(email=normalize_email(email), is_active=True)
-    user.operation_access = operation_access
-    await user.save()
     return present_user(user)
 
 

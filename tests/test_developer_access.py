@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from access_helpers import allow, revoke
 from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
@@ -18,7 +19,6 @@ from trolley.persistence.models import (
     Operation,
     QueryExecution,
     Target,
-    TargetGrant,
     User,
 )
 
@@ -26,7 +26,6 @@ from trolley.persistence.models import (
 def test_developer_exploration_and_admin_publication(tmp_path):
     settings = Settings(
         database_url=f"sqlite://{tmp_path}/test.db",
-        admin_emails=frozenset({"root@example.com"}),
         targets={"db": {"kind": "postgresql", "url": "postgresql://reader:secret@localhost/db"}},
     )
     app = create_app(settings)
@@ -36,12 +35,16 @@ def test_developer_exploration_and_admin_publication(tmp_path):
             server = app.routes[-1].app.state.mcp_server
             dev = await User.create(email="dev@example.com", name="Dev", role=UserRole.DEVELOPER)
             member = await User.create(email="user@example.com", name="User")
-            root = await User.get(email="root@example.com")
+            root = (
+                await User.get_or_create(
+                    email="root@example.com", defaults={"name": "Admin", "role": "admin"}
+                )
+            )[0]
             target = await Target.get(name="db")
 
             async def login(user):
                 _, secret = await create_api_key(user, "test")
-                token = await TrolleyTokenVerifier(settings.admin_emails).verify_token(secret)
+                token = await TrolleyTokenVerifier().verify_token(secret)
                 return auth_context_var.set(AuthenticatedUser(token))
 
             async def call(tool_name, **kwargs):
@@ -49,7 +52,8 @@ def test_developer_exploration_and_admin_publication(tmp_path):
 
             ctx = await login(root)
             try:
-                await call("set_target_access", name="db", email=dev.email, allowed=True)
+                await allow(root, "db")
+                await allow(dev, "db")
                 assert len(await call("list_targets")) == 1
             finally:
                 auth_context_var.reset(ctx)
@@ -74,11 +78,7 @@ def test_developer_exploration_and_admin_publication(tmp_path):
                 )
                 assert updated["version"] == 1
                 assert not {"create_operation", "update_operation", "grant_operation"} & names
-                for name, args in (
-                    ("create_operation", {}),
-                    ("set_user_role", {"email": dev.email, "role": UserRole.ADMIN}),
-                    ("set_target_access", {"name": "db", "allowed": True, "email": dev.email}),
-                ):
+                for name, args in (("create_operation", {}),):
                     with pytest.raises(ToolError, match="scope"):
                         await call(name, **args)
                 assert len(await call("list_targets")) == 1
@@ -103,7 +103,7 @@ def test_developer_exploration_and_admin_publication(tmp_path):
                         await call("query_target", name="db", sql="SELECT 1")
                     assert "secret" not in str(error.value)
 
-                await TargetGrant.filter(user=dev).delete()
+                await revoke(dev)
                 assert await call("list_targets") == []
                 for name, args in (
                     ("query_target", {"name": "db", "sql": "SELECT 1"}),
@@ -122,7 +122,7 @@ def test_developer_exploration_and_admin_publication(tmp_path):
                 assert len(await call("list_targets")) == 1
                 await GroupMembership.filter(user=dev).delete()
                 assert await call("list_targets") == []
-                await TargetGrant.create(user=dev, target=target)
+                await allow(dev, "db")
                 target.is_active = False
                 await target.save()
                 assert await call("list_targets") == []
@@ -135,7 +135,7 @@ def test_developer_exploration_and_admin_publication(tmp_path):
                 auth_context_var.reset(ctx)
 
             # A Target grant alone never gives an ordinary user free SQL access.
-            await TargetGrant.create(user=member, target=target)
+            await allow(member, "db")
             ctx = await login(member)
             try:
                 names = {t.name for t in await server.list_tools()}
