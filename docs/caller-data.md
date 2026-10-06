@@ -1,5 +1,8 @@
 # Personal data access contract
 
+[Mapped ownership for raw rows and file output](caller-rows.md) uses the same
+ownership mapping as aggregates, without dimensions or metrics.
+
 For JSON email ownership mappings and usage summaries without a DB view, see
 [Caller aggregates](caller-aggregates.md). The single-relation form below remains supported.
 
