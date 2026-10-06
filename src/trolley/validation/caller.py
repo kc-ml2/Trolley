@@ -1,17 +1,11 @@
 """Compile a restricted caller-owned relation query; never wrap arbitrary SQL."""
 
-import re
 from copy import deepcopy
 
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+from trolley.validation.ownership import identifier, mapped_predicate
+
 _CALLER = "trolley_caller_email"
 _OPERATORS = {"eq": "=", "gte": ">=", "gt": ">", "lte": "<=", "lt": "<"}
-
-
-def identifier(value):
-    if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
-        raise ValueError("Caller query identifiers must be simple SQL identifiers")
-    return '"' + value + '"'
 
 
 def compile_definition(definition: dict, input_schema: dict) -> dict:
@@ -38,17 +32,24 @@ def compile_definition(definition: dict, input_schema: dict) -> dict:
         raise ValueError("Caller source requires schema and relation")
     relation = f"{identifier(source['schema'])}.{identifier(source['relation'])}"
     ownership = definition.get("ownership")
-    if (
-        not isinstance(ownership, dict)
-        or set(ownership) != {"column", "identity"}
-        or ownership["identity"] != "authenticated_user.email"
-    ):
-        raise ValueError("Caller ownership requires column and authenticated_user.email identity")
-    owner = identifier(ownership["column"])
+    mapped = isinstance(ownership, dict) and "source" in ownership
+    if mapped:
+        predicate = mapped_predicate(ownership)
+    else:
+        if (
+            not isinstance(ownership, dict)
+            or set(ownership) != {"column", "identity"}
+            or ownership["identity"] != "authenticated_user.email"
+        ):
+            raise ValueError(
+                "Caller ownership requires column and authenticated_user.email identity"
+            )
+        predicate = f"{identifier(ownership['column'])} = $1"
+    prefix = "s." if mapped else ""
     columns = definition.get("columns")
     if not isinstance(columns, list) or not columns:
         raise ValueError("Caller columns must be a non-empty list")
-    projection = ", ".join(identifier(column) for column in columns)
+    projection = ", ".join(prefix + identifier(column) for column in columns)
     if len(set(columns)) != len(columns):
         raise ValueError("Caller columns must be unique")
     properties = input_schema.get("properties", {})
@@ -59,12 +60,17 @@ def compile_definition(definition: dict, input_schema: dict) -> dict:
     filters = definition.get("filters", [])
     if not isinstance(filters, list):
         raise ValueError("Caller filters must be a list")
-    predicates = [f"{owner} = $1"]
+    predicates = [predicate]
     parameters = [_CALLER]
     for item in filters:
-        if not isinstance(item, dict) or set(item) != {"column", "operator", "parameter"}:
-            raise ValueError("Caller filters require column, operator and parameter")
-        column = identifier(item["column"])
+        required = {"column", "operator", "parameter"}
+        if (
+            not isinstance(item, dict)
+            or not required <= set(item)
+            or set(item) - required - {"type"}
+        ):
+            raise ValueError("Caller filters require column, operator and parameter; optional type")
+        column = prefix + identifier(item["column"])
         if item["column"] == ownership["column"]:
             raise ValueError("Owner column cannot be filtered by public input")
         operator = item["operator"]
@@ -76,14 +82,25 @@ def compile_definition(definition: dict, input_schema: dict) -> dict:
         if parameter in parameters:
             raise ValueError("Caller filter parameters must be unique")
         parameters.append(parameter)
-        predicates.append(f"{column} {_OPERATORS[operator]} ${len(parameters)}")
+        placeholder = f"${len(parameters)}"
+        if "type" in item:
+            cast = item["type"]
+            if not isinstance(cast, str) or cast not in {"date", "timestamp", "timestamptz"}:
+                raise ValueError("Filter type must be date, timestamp or timestamptz")
+            if properties[parameter].get("type") != "string":
+                raise ValueError("Temporal filter inputs must be strings")
+            placeholder += f"::text::{cast}"
+        predicates.append(f"{column} {_OPERATORS[operator]} {placeholder}")
     if set(parameters[1:]) != set(properties) or set(properties) != set(
         input_schema.get("required", [])
     ):
         raise ValueError("Caller inputs must exactly match required filter parameters")
     return {
         **deepcopy(definition),
-        "sql": f"SELECT {projection} FROM {relation} WHERE " + " AND ".join(predicates),
+        "sql": f"SELECT {projection} FROM {relation}"
+        + (" AS s" if mapped else "")
+        + " WHERE "
+        + " AND ".join(predicates),
         "parameters": parameters,
         "bindings": {_CALLER: "authenticated_user.email"},
         "fetch": True,

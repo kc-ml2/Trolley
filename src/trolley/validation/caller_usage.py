@@ -2,7 +2,8 @@
 
 from copy import deepcopy
 
-from trolley.validation.caller import _CALLER, _OPERATORS, identifier
+from trolley.validation.caller import _CALLER, _OPERATORS
+from trolley.validation.ownership import identifier, mapped_predicate
 
 
 def compile_usage(definition: dict, input_schema: dict) -> dict:
@@ -22,35 +23,8 @@ def compile_usage(definition: dict, input_schema: dict) -> dict:
     owner = definition.get("ownership")
     if not isinstance(source, dict) or set(source) != {"schema", "relation"}:
         raise ValueError("Source requires schema and relation")
-    if not isinstance(owner, dict) or set(owner) != {
-        "source",
-        "source_column",
-        "match_column",
-        "column",
-        "json_key",
-        "identity",
-    }:
-        raise ValueError(
-            "Mapped ownership requires source, source_column, match_column, "
-            "column, json_key and identity"
-        )
-    if owner["identity"] != "authenticated_user.email":
-        raise ValueError("Ownership must use authenticated_user.email")
-    mapping = owner["source"]
-    if not isinstance(mapping, dict) or set(mapping) != {"schema", "relation"}:
-        raise ValueError("Ownership source requires schema and relation")
     relation = f"{identifier(source['schema'])}.{identifier(source['relation'])}"
-    owner_relation = f"{identifier(mapping['schema'])}.{identifier(mapping['relation'])}"
-    # JSON keys are deliberately restricted to identifiers, never arbitrary SQL.
-    identifier(owner["json_key"])
-    owner_column = f"o.{identifier(owner['column'])} -> '{owner['json_key']}'"
-    owner_text = f"o.{identifier(owner['column'])} ->> '{owner['json_key']}'"
-    predicate = (
-        f"EXISTS (SELECT 1 FROM {owner_relation} AS o WHERE "
-        f"o.{identifier(owner['match_column'])} = s.{identifier(owner['source_column'])} "
-        f"AND jsonb_typeof({owner_column}) = 'string' "
-        f"AND lower(btrim({owner_text})) = $1)"
-    )
+    predicate = mapped_predicate(owner)
     dimensions = definition.get("dimensions", [])
     metrics = definition.get("metrics")
     if not isinstance(dimensions, list) or not isinstance(metrics, list) or not metrics:
