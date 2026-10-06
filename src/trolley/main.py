@@ -13,6 +13,7 @@ from trolley.domain.users import UserRole
 from trolley.mcp.server import create_mcp_app
 from trolley.mcp.token_verifier import TrolleyTokenVerifier
 from trolley.persistence.database import tortoise_config
+from trolley.provisioning import provisioning_router
 from trolley.targets import configure_targets
 
 
@@ -180,6 +181,7 @@ requested tool or operation; ask a Trolley administrator for access.
 """
         return PlainTextResponse(document, media_type="text/markdown")
 
+    app.include_router(provisioning_router(app_settings))
     app.mount("/mcp", mcp_app)
     return app
 
