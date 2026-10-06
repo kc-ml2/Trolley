@@ -27,6 +27,11 @@ class ExportSettings(BaseModel):
     max_jobs: int = Field(default=10, gt=0, strict=True)
 
 
+class ProvisioningSettings(BaseModel):
+    # Unset or empty means disabled. This is a server-level master credential.
+    key: SecretStr | None = None
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -41,6 +46,7 @@ class Settings(BaseModel):
     smtp_security: SmtpSecurity = SmtpSecurity.STARTTLS
     smtp_timeout: float = 10
     exports: ExportSettings = Field(default_factory=ExportSettings)
+    provisioning: ProvisioningSettings = Field(default_factory=ProvisioningSettings)
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
@@ -62,6 +68,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     try:
         return Settings(
             exports=_mapping(document, "exports"),
+            provisioning=_mapping(document, "provisioning"),
             public_base_url=server.get("public_base_url", "http://localhost:8000"),
             database_url=catalog.get("database_url", "sqlite://./trolley.db"),
             targets=targets,
