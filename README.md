@@ -42,7 +42,9 @@ docker compose exec trolley trolley operator add-user
 
 The interactive wizard asks for email, role, group, new-group Targets, and final
 confirmation. No initial users or groups are created automatically. Identity,
-group access and key issuance are CLI-only responsibilities, not MCP tools.
+group access and key issuance are operator responsibilities, not MCP tools.
+An optional [master-service API](docs/provisioning.md) can provision a user,
+add group Target access and issue a key in one request.
 See [operator commands and wizard](docs/operator-wizard.md).
 
 Two private configuration files are required: `.trolley-postgres.env` initializes

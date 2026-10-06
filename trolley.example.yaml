@@ -4,8 +4,14 @@ server:
 catalog:
   database_url: sqlite://./trolley.db
 
+# Optional trusted-backend provisioning API; disabled when key is absent or empty.
+# Generate a private random key (e.g. openssl rand -hex 32). Never commit the real key.
+# This master key can issue user keys with existing admin privileges too.
+# See docs/provisioning.md for POST /provision/user.
+# provisioning:
+#   key: "REPLACE_WITH_RANDOM_SECRET"
 
-# Optional Google Workspace SMTP settings for invite_user.
+# Optional Google Workspace SMTP settings for CLI invitations.
 # Remove or leave this section commented out to disable email delivery.
 # smtp:
 #   host: smtp.gmail.com

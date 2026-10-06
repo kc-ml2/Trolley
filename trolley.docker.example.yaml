@@ -15,3 +15,10 @@ exports:
   ttl_seconds: 3600
   max_jobs: 10
 # Optional SMTP settings: docs/guide.md
+
+# Optional trusted-backend provisioning API; disabled when key is absent or empty.
+# Generate a private random key (e.g. openssl rand -hex 32). Never commit the real key.
+# This master key can issue user keys with existing admin privileges too.
+# See docs/provisioning.md for POST /provision/user.
+# provisioning:
+#   key: "REPLACE_WITH_RANDOM_SECRET"
