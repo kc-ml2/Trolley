@@ -23,11 +23,23 @@ def test_invitation_multipart(monkeypatch):
     assert "test-key<&>" in message.get_body(preferencelist=("plain",)).get_content()
     rendered = message.get_body(preferencelist=("html",)).get_content()
     assert "test-key&lt;&amp;&gt;" in rendered
-    assert "a=1&amp;b=2" in rendered
+    assert "https://example.com/mcp/" in rendered
+    assert "https://example.com/mcp/" in body
+    assert "onboarding.md" not in rendered + body
+    assert "Copy this into your agent" not in rendered + body
+    assert not list(message.iter_attachments())
+    assert "Do not forward it or commit it to a repository." in body
     assert "Enter this key in your client’s secret settings—not in chat." in rendered
     assert "Enter this key in your client’s secret settings—not in chat." in body
     assert len(body.splitlines()) <= 20
     assert service.available
+
+
+def test_invitation_preserves_server_base_path():
+    subject, body, html = invitation("test-key", "https://example.com/trolley/onboarding.md")
+    assert subject == "Trolley — your API key"
+    assert "https://example.com/trolley/mcp/" in body
+    assert "https://example.com/trolley/mcp/" in html
 
 
 def test_send_failure_raises(monkeypatch):

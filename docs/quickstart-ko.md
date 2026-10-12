@@ -20,7 +20,7 @@ docker compose exec trolley trolley operator add-user
 
 ## 사용자: 연결하고 질문하기
 
-1. 이메일의 onboarding.md URL을 AI에게 전달해 연결을 요청합니다.
+1. 이메일의 MCP 서버 주소를 클라이언트의 MCP 연결 설정에 입력합니다.
 2. API 키는 대화가 아닌 클라이언트 인증 설정에 직접 입력합니다.
 3. MCP 재연결 후 “Trolley에서 내가 할 수 있는 일을 알려줘”라고 요청합니다.
 

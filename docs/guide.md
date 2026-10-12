@@ -4,8 +4,9 @@
 
 ## Connect
 
-Use the `/onboarding.md` URL from your invitation. It is a guide, not the MCP
-endpoint. Connect the client to `/mcp/` using Streamable HTTP and a Bearer API key.
+Your invitation contains the MCP server URL and your API key. Enter them in your
+client's MCP settings using Streamable HTTP and Bearer authentication. The optional
+`/onboarding.md` endpoint remains available as a connection guide.
 If the client has no MCP integration, consult its official documentation for a
 supported extension/bridge or switch clients. Never paste keys into chat.
 
